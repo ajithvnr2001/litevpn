@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">SwiftTunnel</string>
+    <string name="nav_connect">Connect</string>
+    <string name="nav_locations">Locations</string>
+    <string name="nav_split_tunnel">Split Apps</string>
+    <string name="status_connected">Protected</string>
+    <string name="status_connecting">Connecting…</string>
+    <string name="status_disconnected">Unprotected</string>
+    <string name="status_disconnecting">Disconnecting…</string>
+    <string name="status_error">Connection Error</string>
+    <string name="action_connect">Connect</string>
+    <string name="action_disconnect">Disconnect</string>
+    <string name="action_refresh">Refresh</string>
+    <string name="action_copy_config">Copy WireGuard Config</string>
+    <string name="vpn_notification_channel">VPN &amp; DNS Tunnel</string>
+    <string name="vpn_notification_title">SwiftTunnel Active</string>
+    <string name="search_locations_hint">Search country, city, or code (e.g. US, Tokyo)…</string>
+    <string name="search_apps_hint">Search installed apps…</string>
+    <string name="vpn_permission_denied">VPN permission was denied. Please approve the system prompt to activate the tunnel.</string>
+</resources>

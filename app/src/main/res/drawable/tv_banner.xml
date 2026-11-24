@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+
+    <!-- Deep Obsidian Background -->
+    <path
+        android:fillColor="#070B14"
+        android:pathData="M0,0h320v180h-320z" />
+
+    <!-- Subtle Tactical Grid / Glow Accents -->
+    <path
+        android:fillColor="#0E1A30"
+        android:pathData="M0,120 L320,60 L320,180 L0,180 Z" />
+    <path
+        android:fillColor="#073242"
+        android:pathData="M95,90 m-62,0 a62,62 0 1,0 124,0 a62,62 0 1,0 -124,0" />
+
+    <!-- Geometric Shield Emblem -->
+    <path
+        android:fillColor="#0B132B"
+        android:strokeColor="#00E5FF"
+        android:strokeWidth="4.5"
+        android:pathData="M95,38 L52,54 L52,92 C52,119 71,141 95,148 C119,141 138,119 138,92 L138,54 Z" />
+
+    <!-- Lightning Tunnel Bolt -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M101,56 L77,94 L94,94 L88,126 L114,84 L96,84 Z" />
+
+    <!-- Accent Status Bars representing SwiftTunnel + 1.1.1.1 / 8.8.8.8 -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M168,66 h104 c3,0 5,2 5,5 v6 c0,3 -2,5 -5,5 h-104 c-3,0 -5,-2 -5,-5 v-6 c0,-3 2,-5 5,-5 z" />
+    <path
+        android:fillColor="#00E676"
+        android:pathData="M168,94 h72 c3,0 5,2 5,5 v4 c0,3 -2,5 -5,5 h-72 c-3,0 -5,-2 -5,-5 v-4 c0,-3 2,-5 5,-5 z" />
+    <path
+        android:fillColor="#FF9100"
+        android:pathData="M168,116 h42 c2,0 4,2 4,4 v3 c0,2 -2,4 -4,4 h-42 c-2,0 -4,-2 -4,-4 v-3 c0,-2 2,-4 4,-4 z" />
+    <path
+        android:fillColor="#448AFF"
+        android:pathData="M220,116 h42 c2,0 4,2 4,4 v3 c0,2 -2,4 -4,4 h-42 c-2,0 -4,-2 -4,-4 v-3 c0,-2 2,-4 4,-4 z" />
+</vector>

@@ -1,0 +1,6 @@
+{
+  "name": "SwiftTunnel",
+  "description": "Ultra-lightweight VPN and DNS routing client with Nord server locations, Cloudflare 1.1.1.1 / Google 8.8.8.8 combinations, and app split tunneling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
