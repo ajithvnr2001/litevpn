@@ -1,6 +1,6 @@
-# NordVPN API Integration, Cryptography & Security Model (v6.0)
+# NordVPN API Integration, Cryptography & Security Model (v7.0)
 
-This document details every external API endpoint used by **SwiftTunnel v6.0**, how API credentials, WireGuard private keys, and exported JSON backups are protected, how R8 optimization maintains the **3.6 MB** APK footprint, and how the app complies with Google Play Developer Program policies.
+This document details every external API endpoint used by **SwiftTunnel v7.0**, how API credentials, WireGuard private keys, and exported JSON backups are protected, how per-app multi-location routing works securely via public Android APIs, how R8 optimization maintains the **3.7 MB** APK footprint, and how the app complies with Google Play Developer Program policies.
 
 ---
 
@@ -83,12 +83,18 @@ SwiftTunnel communicates over HTTPS using Android's built-in `HttpURLConnection`
 - The `nordlynx_private_key` returned by NordVPN lives strictly in volatile RAM (`VpnKeyBridge`) and is cleared on disconnect.
 
 ### 2.3 Secret-Free Config Backup Invariant (`data/ConfigBackupCodec.kt`)
-- Exported JSON files contain **zero secrets** and explicitly declare `"secretsExcluded": true`.
+- Exported JSON files contain **zero secrets** and explicitly declare `"secretsExcluded": true` (see [`import/export_eg.json`](../import/export_eg.json)).
 - Neither the encrypted/decrypted NordVPN API key nor the WireGuard private key is ever serialized into or parsed from backup JSON.
 - Imported fields are strictly validated:
   - `customDnsPrimary` / `customDnsSecondary` must pass `isValidIpv4Address()` or are sanitized to `""`.
   - `customMtu` and per-profile `mtu` are clamped to `[1280, 1420]`.
+  - `appRouteRules` entries require a non-blank `packageName` and valid positive `countryId`.
   - Unknown enum IDs safely fall back to defaults (`CLOUDFLARE_PLUS_VPN`, `MODE_DEFAULT`, `ALL_APPS`).
+
+### 2.4 Per-App Multi-Location Routing Security (`ConnectivityManager.getConnectionOwnerUid`)
+- On Android 10+ (API 29+), Android grants the active `VpnService` access to `ConnectivityManager.getConnectionOwnerUid(protocol, local, remote)` **strictly for connections traversing its own TUN interface**.
+- Requires **zero root**, **zero Accessibility permissions**, and **zero `PACKAGE_USAGE_STATS`**.
+- Only packet #1 of each TCP/UDP flow triggers the OS UID check; subsequent packets resolve from the bounded 2,048-entry in-memory `AppPeerRouteTable` cache, and all state is cleared on disconnect.
 
 ---
 
@@ -97,15 +103,15 @@ SwiftTunnel communicates over HTTPS using Android's built-in `HttpURLConnection`
 | Permission / Feature | Declaration | Justification & Policy Compliance |
 | :--- | :--- | :--- |
 | `INTERNET` | Normal (install-time) | NordVPN API calls, Cloudflare trace leak check, and WireGuard UDP/DNS transport |
-| `ACCESS_NETWORK_STATE` | Normal (install-time) | `ConnectivityManager.NetworkCallback` for Boot network wait and Wi-Fi ↔ 5G Handover |
+| `ACCESS_NETWORK_STATE` | Normal (install-time) | `ConnectivityManager.NetworkCallback` for Boot network wait, Wi-Fi ↔ 5G Handover, and `getConnectionOwnerUid()` inside `VpnService` |
 | `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_SPECIAL_USE` | Normal + Manifest `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` | Keeps `SwiftTunnelVpnService` alive reliably with a transparent user notification |
 | `POST_NOTIFICATIONS` | Runtime (Android 13+) | Persistent VPN status notification with `#code` & quick-disconnect action; degrades gracefully if denied |
 | `RECEIVE_BOOT_COMPLETED` | Normal (install-time) | Powers optional **Auto-Connect on Power-Up** on phones and Android TV |
 | `android.permission.BIND_VPN_SERVICE` | Service permission on `SwiftTunnelVpnService` | System-only binding requirement for Android `VpnService` |
 | `android.permission.BIND_QUICK_SETTINGS_TILE` | Service permission on `SwiftTunnelTileService` | System-only binding requirement for Android Quick Settings Tile |
 | **Zero Storage Permissions** | `ActivityResultContracts.CreateDocument` & `OpenDocument` | Export/Import JSON backups via Android Storage Access Framework without requesting `READ_EXTERNAL_STORAGE` or `MANAGE_EXTERNAL_STORAGE` |
-| `<queries>` (`LAUNCHER` + `LEANBACK_LAUNCHER`) | Scoped package visibility | Discovers installed mobile and Android TV apps for Split Tunneling **without** requesting `QUERY_ALL_PACKAGES` |
-| `android.software.leanback` (`required="false"`) & `android.hardware.touchscreen` (`required="false"`) | Manifest `<uses-feature>` | Allows a single universal 3.6 MB APK to install across Phones, Tablets, Foldables, and Android TV / Google TV |
+| `<queries>` (`LAUNCHER` + `LEANBACK_LAUNCHER`) | Scoped package visibility | Discovers installed mobile and Android TV apps for Split Tunneling & Per-App Country Routing **without** requesting `QUERY_ALL_PACKAGES` |
+| `android.software.leanback` (`required="false"`) & `android.hardware.touchscreen` (`required="false"`) | Manifest `<uses-feature>` | Allows a single universal 3.7 MB APK to install across Phones, Tablets, Foldables, and Android TV / Google TV |
 
 ### Battery Optimization Policy
 - SwiftTunnel does **not** request `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`. Users can optionally open Android's standard `Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS` screen via the UI shortcut if their OEM aggressively kills background VPN services.

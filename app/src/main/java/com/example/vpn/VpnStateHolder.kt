@@ -1,5 +1,6 @@
 package com.example.vpn
 
+import com.example.model.ActivePeerTunnelSummary
 import com.example.model.VpnSessionState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,6 +43,22 @@ object VpnStateHolder {
                 dnsQueriesForwarded = current.dnsQueriesForwarded + packetsDelta,
                 bytesTx = current.bytesTx + txBytesDelta,
                 bytesRx = current.bytesRx + rxBytesDelta
+            )
+        }
+    }
+
+    fun recordMultiPeerWireGuardStats(
+        packetsDelta: Long,
+        txBytesDelta: Long,
+        rxBytesDelta: Long,
+        peerSummaries: List<ActivePeerTunnelSummary>
+    ) {
+        _sessionState.update { current ->
+            current.copy(
+                dnsQueriesForwarded = current.dnsQueriesForwarded + packetsDelta,
+                bytesTx = current.bytesTx + txBytesDelta,
+                bytesRx = current.bytesRx + rxBytesDelta,
+                activePeerTunnels = peerSummaries
             )
         }
     }

@@ -340,4 +340,35 @@ object AppIcons {
             }
         }.build()
     }
+
+    val Sliders: ImageVector by lazy {
+        ImageVector.Builder("Sliders", 24.dp, 24.dp, 24f, 24f).apply {
+            path(
+                stroke = SolidColor(Color.Black),
+                strokeLineWidth = 2f,
+                strokeLineCap = StrokeCap.Round
+            ) {
+                moveTo(4f, 6f)
+                horizontalLineTo(20f)
+                moveTo(4f, 12f)
+                horizontalLineTo(20f)
+                moveTo(4f, 18f)
+                horizontalLineTo(20f)
+            }
+            path(fill = SolidColor(Color.Black)) {
+                moveTo(9f, 4f)
+                arcTo(2f, 2f, 0f, true, true, 9f, 8f)
+                arcTo(2f, 2f, 0f, true, true, 9f, 4f)
+                close()
+                moveTo(15f, 10f)
+                arcTo(2f, 2f, 0f, true, true, 15f, 14f)
+                arcTo(2f, 2f, 0f, true, true, 15f, 10f)
+                close()
+                moveTo(10f, 16f)
+                arcTo(2f, 2f, 0f, true, true, 10f, 20f)
+                arcTo(2f, 2f, 0f, true, true, 10f, 16f)
+                close()
+            }
+        }.build()
+    }
 }

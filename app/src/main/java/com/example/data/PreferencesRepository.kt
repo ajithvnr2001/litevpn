@@ -1,6 +1,7 @@
 package com.example.data
 
 import android.content.Context
+import com.example.model.AppRouteRule
 import com.example.model.ConnectionMode
 import com.example.model.DnsPreset
 import com.example.model.NordServer
@@ -229,6 +230,49 @@ class PreferencesRepository(context: Context) {
         prefs.edit().putString(KEY_SAVED_PROFILES_JSON, arr.toString()).apply()
     }
 
+    fun getAppRouteRules(): List<AppRouteRule> {
+        val raw = prefs.getString(KEY_APP_ROUTE_RULES_JSON, null) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            val out = ArrayList<AppRouteRule>(arr.length())
+            for (i in 0 until arr.length()) {
+                val obj = arr.optJSONObject(i) ?: continue
+                val pkg = obj.optString("packageName", "").trim()
+                val cid = obj.optInt("countryId", -1)
+                if (pkg.isEmpty() || cid <= 0) continue
+                out.add(
+                    AppRouteRule(
+                        packageName = pkg,
+                        countryId = cid,
+                        countryName = obj.optString("countryName", ""),
+                        countryCode = obj.optString("countryCode", "").uppercase(),
+                        cityName = obj.optString("cityName", "").ifBlank { null },
+                        pinnedServerHostname = obj.optString("pinnedServerHostname", "").ifBlank { null },
+                        pinnedServerCode = obj.optString("pinnedServerCode", "").ifBlank { null }
+                    )
+                )
+            }
+            out.distinctBy { it.packageName }
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveAppRouteRules(rules: List<AppRouteRule>) {
+        val arr = JSONArray()
+        rules.distinctBy { it.packageName }.forEach { r ->
+            val obj = JSONObject().apply {
+                put("packageName", r.packageName)
+                put("countryId", r.countryId)
+                put("countryName", r.countryName)
+                put("countryCode", r.countryCode)
+                put("cityName", r.cityName.orEmpty())
+                put("pinnedServerHostname", r.pinnedServerHostname.orEmpty())
+                put("pinnedServerCode", r.pinnedServerCode.orEmpty())
+            }
+            arr.put(obj)
+        }
+        prefs.edit().putString(KEY_APP_ROUTE_RULES_JSON, arr.toString()).apply()
+    }
+
     fun exportConfigBackup(): AppConfigBackup = AppConfigBackup(
         connectionModeId = getConnectionMode().id,
         dnsPresetId = getDnsPreset().id,
@@ -245,6 +289,7 @@ class PreferencesRepository(context: Context) {
         lanBypassEnabled = isLanBypassEnabled(),
         autoFailoverEnabled = isAutoFailoverEnabled(),
         customMtu = getCustomMtu(),
+        appRouteRules = getAppRouteRules(),
         savedProfiles = getSavedProfiles()
     )
 
@@ -262,6 +307,7 @@ class PreferencesRepository(context: Context) {
         setLanBypassEnabled(backup.lanBypassEnabled)
         setAutoFailoverEnabled(backup.autoFailoverEnabled)
         setCustomMtu(backup.customMtu)
+        saveAppRouteRules(backup.appRouteRules)
         saveProfiles(backup.savedProfiles)
     }
 
@@ -305,6 +351,7 @@ class PreferencesRepository(context: Context) {
         private const val KEY_LAN_BYPASS = "lan_bypass"
         private const val KEY_AUTO_FAILOVER = "auto_failover"
         private const val KEY_CUSTOM_MTU = "custom_mtu"
+        private const val KEY_APP_ROUTE_RULES_JSON = "app_route_rules_json"
         private const val KEY_SAVED_PROFILES_JSON = "saved_profiles_json"
         private const val KEY_SPLIT_MODE = "split_mode"
         private const val KEY_EXCLUDED_APPS = "excluded_apps"

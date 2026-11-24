@@ -8,14 +8,34 @@
   "selectedCountryId": 228,
   "selectedCityName": "Los Angeles",
   "pinnedServerHostname": "us13084.nordvpn.com",
-  "favoriteCountryIds": [2, 227, 228],
-  "splitModeId": "include",
+  "favoriteCountryIds": [2, 100, 228],
+  "splitModeId": "all",
   "excludedPackages": ["com.google.android.apps.chromecast.app"],
   "includedPackages": ["com.brave.browser", "com.netflix.ninja"],
   "autoConnectOnBoot": true,
   "lanBypassEnabled": true,
   "autoFailoverEnabled": true,
   "customMtu": 1360,
+  "appRouteRules": [
+    {
+      "packageName": "com.brave.browser",
+      "countryId": 100,
+      "countryName": "India",
+      "countryCode": "IN",
+      "cityName": "",
+      "pinnedServerHostname": "",
+      "pinnedServerCode": ""
+    },
+    {
+      "packageName": "com.netflix.ninja",
+      "countryId": 228,
+      "countryName": "United States",
+      "countryCode": "US",
+      "cityName": "Los Angeles",
+      "pinnedServerHostname": "us13084.nordvpn.com",
+      "pinnedServerCode": "#13084"
+    }
+  ],
   "savedProfiles": [
     {
       "id": "tv-la-ads",

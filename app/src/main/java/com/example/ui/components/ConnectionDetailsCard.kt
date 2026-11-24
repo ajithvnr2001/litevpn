@@ -15,8 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -27,7 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -37,6 +34,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.model.ActivePeerTunnelSummary
 import com.example.model.ConnectionTelemetryFormatter
 import com.example.ui.MainUiState
 import com.example.ui.theme.CloudflareAmber
@@ -88,19 +86,16 @@ fun ConnectionDetailsCard(
         )
     }
 
-    val cardPadding = if (isAndroidTv) 18.dp else 16.dp
-    val statusColor = if (snapshot.isConnected) EmeraldProtected else accentColor
+    val cardPadding = if (isAndroidTv) 16.dp else 14.dp
+    val statusColor = if (snapshot.isConnected) EmeraldProtected else MaterialTheme.colorScheme.onSurfaceVariant
 
-    Card(
+    Surface(
         modifier = modifier
             .fillMaxWidth()
             .testTag("connection_details_stats_card"),
-        shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(
-            width = if (snapshot.isConnected) 1.4.dp else 1.dp,
-            color = statusColor.copy(alpha = if (snapshot.isConnected) 0.55f else 0.25f)
-        )
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(
             modifier = Modifier
@@ -108,108 +103,96 @@ fun ConnectionDetailsCard(
                 .padding(cardPadding),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Top bar: Title + Live Status Dot + Session Uptime
+            // Header row: Label + live uptime
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Text(
+                    text = "TELEMETRY",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = JetBrainsMonoFamily,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(9.dp)
+                            .size(7.dp)
                             .clip(CircleShape)
                             .background(statusColor)
                     )
                     Text(
-                        text = "Connection Details & Stats",
-                        style = if (isAndroidTv) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = statusColor.copy(alpha = 0.14f),
-                    border = BorderStroke(1.dp, statusColor.copy(alpha = 0.35f))
-                ) {
-                    Text(
-                        text = if (snapshot.isConnected) "LIVE ${snapshot.uptimeText}" else snapshot.statusLabel,
+                        text = if (snapshot.isConnected) snapshot.uptimeText else snapshot.statusLabel,
                         style = MaterialTheme.typography.labelSmall.copy(
                             fontFamily = JetBrainsMonoFamily,
-                            fontWeight = FontWeight.Bold
+                            fontWeight = FontWeight.Medium
                         ),
-                        color = statusColor,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        color = statusColor
                     )
                 }
             }
 
-            // Highlighted Location + Server Code Strip (clickable/focusable to switch server)
+            // Server Endpoint Row (clickable to switch location)
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
+                    .clip(RoundedCornerShape(10.dp))
                     .tvFocusableClickable(
-                        shape = RoundedCornerShape(16.dp),
+                        shape = RoundedCornerShape(10.dp),
                         focusColor = ElectricCyan,
-                        scaleOnFocus = 1.015f,
+                        scaleOnFocus = 1.01f,
                         onClick = onOpenLocations
                     )
                     .testTag("connection_location_code_banner"),
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(10.dp),
                 color = MaterialTheme.colorScheme.surfaceContainerLow,
-                border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.32f))
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                        .padding(horizontal = 12.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
                         text = snapshot.flagEmoji,
-                        style = if (isAndroidTv) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.headlineSmall
+                        style = MaterialTheme.typography.titleLarge
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(10.dp))
                     Column(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(7.dp),
-                                color = ElectricCyan.copy(alpha = 0.18f),
-                                border = BorderStroke(1.dp, ElectricCyan.copy(alpha = 0.55f)),
+                            Text(
+                                text = snapshot.locationCode,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontFamily = JetBrainsMonoFamily,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = ElectricCyan,
                                 modifier = Modifier.testTag("active_location_code_badge")
-                            ) {
-                                Text(
-                                    text = snapshot.locationCode,
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        fontFamily = JetBrainsMonoFamily,
-                                        fontWeight = FontWeight.Bold
-                                    ),
-                                    color = ElectricCyan,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                )
-                            }
+                            )
                             Text(
                                 text = snapshot.locationName,
-                                style = if (isAndroidTv) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall,
+                                style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onSurface,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
                         }
                         Text(
-                            text = "${snapshot.hostname} • ${snapshot.endpoint}",
-                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = JetBrainsMonoFamily),
+                            text = "${snapshot.hostname} · ${snapshot.endpoint}",
+                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -217,42 +200,36 @@ fun ConnectionDetailsCard(
                     }
                     if (snapshot.countryCode.isNotBlank()) {
                         Spacer(modifier = Modifier.width(8.dp))
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh
-                        ) {
-                            Text(
-                                text = snapshot.countryCode,
-                                style = MaterialTheme.typography.labelMedium.copy(
-                                    fontFamily = JetBrainsMonoFamily,
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
+                        Text(
+                            text = snapshot.countryCode,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = JetBrainsMonoFamily,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
 
-            // Live Throughput & Traffic Telemetry Grid (2x2 tiles for crisp readability on Phone & TV)
+            // 2x2 Swiss Metrics Grid
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 StatTile(
-                    label = "↓ DOWNLOAD",
+                    label = "DOWN",
                     primaryValue = snapshot.downloadRateText,
-                    secondaryValue = "Total ${snapshot.downloadTotalText}",
-                    valueColor = EmeraldProtected,
+                    secondaryValue = snapshot.downloadTotalText,
+                    valueColor = if (snapshot.isConnected) EmeraldProtected else MaterialTheme.colorScheme.onSurface,
                     isAndroidTv = isAndroidTv,
                     modifier = Modifier.weight(1f)
                 )
                 StatTile(
-                    label = "↑ UPLOAD",
+                    label = "UP",
                     primaryValue = snapshot.uploadRateText,
-                    secondaryValue = "Total ${snapshot.uploadTotalText}",
-                    valueColor = ElectricCyan,
+                    secondaryValue = snapshot.uploadTotalText,
+                    valueColor = if (snapshot.isConnected) ElectricCyan else MaterialTheme.colorScheme.onSurface,
                     isAndroidTv = isAndroidTv,
                     modifier = Modifier.weight(1f)
                 )
@@ -260,27 +237,27 @@ fun ConnectionDetailsCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 StatTile(
-                    label = "LATENCY",
+                    label = "PING",
                     primaryValue = snapshot.latencyText,
-                    secondaryValue = "${snapshot.secondaryStatLabel}: ${snapshot.secondaryStatValue}",
-                    valueColor = CloudflareAmber,
+                    secondaryValue = "${snapshot.secondaryStatLabel} ${snapshot.secondaryStatValue}",
+                    valueColor = MaterialTheme.colorScheme.onSurface,
                     isAndroidTv = isAndroidTv,
                     modifier = Modifier.weight(1f)
                 )
                 StatTile(
                     label = snapshot.packetsOrQueriesLabel,
                     primaryValue = snapshot.packetsOrQueriesCount,
-                    secondaryValue = "Session ${snapshot.totalTrafficText}",
+                    secondaryValue = snapshot.totalTrafficText,
                     valueColor = MaterialTheme.colorScheme.onSurface,
                     isAndroidTv = isAndroidTv,
                     modifier = Modifier.weight(1f)
                 )
             }
 
-            // Live 30-second Throughput Sparkline Graph (pure Compose Canvas, 0 extra deps)
+            // Minimalist 30s Sparkline
             ThroughputSparklineCard(
                 rxHistory = uiState.rxRateHistory,
                 txHistory = uiState.txRateHistory,
@@ -288,12 +265,19 @@ fun ConnectionDetailsCard(
                 isAndroidTv = isAndroidTv
             )
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
+            // Active Per-App Multi-Location Tunnels (shown when multi-peer is running or configured)
+            val livePeers = uiState.vpnSession.activePeerTunnels
+            if (livePeers.size > 1) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                ActiveMultiPeerList(peers = livePeers)
+            }
 
-            // Structured Connection Specifications (2-column compact rows)
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+
+            // Crisp Spec Table
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 DetailPairRow(
-                    leftLabel = "LOCATION CODE",
+                    leftLabel = "CODE",
                     leftValue = if (snapshot.countryCode.isNotBlank()) {
                         "${snapshot.locationCode} (${snapshot.countryCode})"
                     } else {
@@ -305,26 +289,108 @@ fun ConnectionDetailsCard(
                     isAndroidTv = isAndroidTv
                 )
                 DetailPairRow(
-                    leftLabel = "DNS SERVERS",
+                    leftLabel = "DNS",
                     leftValue = snapshot.dnsSummary,
                     rightLabel = "TUNNEL IP",
                     rightValue = snapshot.tunnelAddress,
                     isAndroidTv = isAndroidTv
                 )
                 DetailPairRow(
-                    leftLabel = "SPLIT TUNNEL",
-                    leftValue = snapshot.splitSummary,
-                    rightLabel = "EXIT / TRACE IP",
+                    leftLabel = "APPS",
+                    leftValue = if (uiState.appRouteRules.isNotEmpty()) {
+                        "${snapshot.splitSummary} · ${uiState.appRouteRules.size} routed"
+                    } else {
+                        snapshot.splitSummary
+                    },
+                    rightLabel = "EXIT IP",
                     rightValue = snapshot.exitIpText,
                     isAndroidTv = isAndroidTv
                 )
                 DetailPairRow(
-                    leftLabel = "LAN ROUTING",
+                    leftLabel = "LAN",
                     leftValue = snapshot.lanBypassText,
                     leftHighlight = if (uiState.lanBypassEnabled) EmeraldProtected else null,
-                    rightLabel = "INTERFACE MTU",
+                    rightLabel = "MTU",
                     rightValue = snapshot.mtuText,
                     isAndroidTv = isAndroidTv
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ActiveMultiPeerList(
+    peers: List<ActivePeerTunnelSummary>
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("active_multi_peer_tunnels_list"),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Text(
+            text = "ACTIVE MULTI-APP TUNNELS (${peers.size})",
+            style = MaterialTheme.typography.labelSmall.copy(
+                fontFamily = JetBrainsMonoFamily,
+                fontWeight = FontWeight.SemiBold
+            ),
+            color = EmeraldProtected
+        )
+        peers.forEach { peer ->
+            val traffic = ConnectionTelemetryFormatter.formatBytes(peer.bytesRx + peer.bytesTx)
+            val appText = if (peer.isDefaultPeer) {
+                "Default"
+            } else {
+                val count = peer.appPackages.size
+                "$count ${if (count == 1) "app" else "apps"}"
+            }
+            val locationTitle = if (peer.cityName.isNotBlank()) {
+                "${peer.flagEmoji} ${peer.cityName}, ${peer.countryCode}"
+            } else {
+                "${peer.flagEmoji} ${peer.countryName}"
+            }
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow)
+                    .padding(horizontal = 10.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(EmeraldProtected)
+                    )
+                    Text(
+                        text = peer.serverCodeTag,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = JetBrainsMonoFamily,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = ElectricCyan
+                    )
+                    Text(
+                        text = locationTitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "$appText · $traffic",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -342,20 +408,20 @@ private fun ThroughputSparklineCard(
         val peak = maxOf(rxHistory.maxOrNull() ?: 0L, txHistory.maxOrNull() ?: 0L)
         peak.coerceAtLeast(1024L)
     }
-    val gridColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.45f)
+    val gridColor = MaterialTheme.colorScheme.outlineVariant
 
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("throughput_sparkline_graph"),
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             Row(
@@ -368,45 +434,23 @@ private fun ThroughputSparklineCard(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text(
-                        text = "LIVE THROUGHPUT (30s)",
-                        style = MaterialTheme.typography.labelSmall,
+                        text = "30S RATE",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(EmeraldProtected)
-                        )
-                        Text(
-                            text = "DL",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = EmeraldProtected
-                        )
-                    }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(ElectricCyan)
-                        )
-                        Text(
-                            text = "UL",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = ElectricCyan
-                        )
-                    }
+                    Text(
+                        text = "● DL",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                        color = EmeraldProtected
+                    )
+                    Text(
+                        text = "● UL",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                        color = ElectricCyan
+                    )
                 }
                 Text(
-                    text = if (isConnected) "Peak ${ConnectionTelemetryFormatter.formatRate(maxPeak)}" else "Idle",
+                    text = if (isConnected) ConnectionTelemetryFormatter.formatRate(maxPeak) else "IDLE",
                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -415,13 +459,12 @@ private fun ThroughputSparklineCard(
             Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(if (isAndroidTv) 64.dp else 54.dp)
+                    .height(if (isAndroidTv) 52.dp else 44.dp)
             ) {
                 val w = size.width
                 val h = size.height
                 if (w <= 0f || h <= 0f) return@Canvas
 
-                // Subtle 3-tier horizontal gridlines
                 for (i in 0..2) {
                     val y = h * (i / 2f)
                     drawLine(
@@ -435,58 +478,33 @@ private fun ThroughputSparklineCard(
                 val slots = 30
                 val stepX = w / (slots - 1).coerceAtLeast(1)
 
-                fun drawSeries(samples: List<Long>, strokeColor: Color, fillArea: Boolean) {
+                fun drawSeries(samples: List<Long>, strokeColor: Color) {
                     if (samples.isEmpty()) return
                     val padded = if (samples.size < slots) {
                         List(slots - samples.size) { 0L } + samples
                     } else {
                         samples.takeLast(slots)
                     }
-                    val strokePath = Path()
-                    val fillPath = Path()
+                    val path = Path()
                     padded.forEachIndexed { idx, value ->
                         val x = idx * stepX
                         val ratio = (value.toFloat() / maxPeak.toFloat()).coerceIn(0f, 1f)
                         val y = h - (ratio * (h - 6f)) - 3f
-                        if (idx == 0) {
-                            strokePath.moveTo(x, y)
-                            if (fillArea) {
-                                fillPath.moveTo(x, h)
-                                fillPath.lineTo(x, y)
-                            }
-                        } else {
-                            strokePath.lineTo(x, y)
-                            if (fillArea) fillPath.lineTo(x, y)
-                        }
-                    }
-                    if (fillArea) {
-                        fillPath.lineTo(w, h)
-                        fillPath.close()
-                        drawPath(
-                            path = fillPath,
-                            brush = Brush.verticalGradient(
-                                colors = listOf(
-                                    strokeColor.copy(alpha = 0.28f),
-                                    strokeColor.copy(alpha = 0.02f)
-                                ),
-                                startY = 0f,
-                                endY = h
-                            )
-                        )
+                        if (idx == 0) path.moveTo(x, y) else path.lineTo(x, y)
                     }
                     drawPath(
-                        path = strokePath,
+                        path = path,
                         color = strokeColor,
                         style = Stroke(
-                            width = 2.6f,
+                            width = 2.2f,
                             cap = StrokeCap.Round,
                             join = StrokeJoin.Round
                         )
                     )
                 }
 
-                drawSeries(rxHistory, EmeraldProtected, fillArea = true)
-                drawSeries(txHistory, ElectricCyan, fillArea = false)
+                drawSeries(rxHistory, EmeraldProtected)
+                drawSeries(txHistory, ElectricCyan)
             }
         }
     }
@@ -503,19 +521,19 @@ private fun StatTile(
 ) {
     Surface(
         modifier = modifier,
-        shape = RoundedCornerShape(14.dp),
+        shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = if (isAndroidTv) 12.dp else 10.dp),
+                .padding(horizontal = 10.dp, vertical = if (isAndroidTv) 10.dp else 8.dp),
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Text(
                 text = label,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -524,7 +542,7 @@ private fun StatTile(
                 text = primaryValue,
                 style = (if (isAndroidTv) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleSmall).copy(
                     fontFamily = JetBrainsMonoFamily,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.SemiBold
                 ),
                 color = valueColor,
                 maxLines = 1,
@@ -557,7 +575,7 @@ private fun DetailPairRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = leftLabel,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1
             )
@@ -566,7 +584,7 @@ private fun DetailPairRow(
                 text = leftValue,
                 style = (if (isAndroidTv) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall).copy(
                     fontFamily = JetBrainsMonoFamily,
-                    fontWeight = if (leftHighlight != null) FontWeight.Bold else FontWeight.Medium
+                    fontWeight = if (leftHighlight != null) FontWeight.SemiBold else FontWeight.Normal
                 ),
                 color = leftHighlight ?: MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
@@ -576,7 +594,7 @@ private fun DetailPairRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = rightLabel,
-                style = MaterialTheme.typography.labelSmall,
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1
             )
@@ -584,8 +602,7 @@ private fun DetailPairRow(
             Text(
                 text = rightValue,
                 style = (if (isAndroidTv) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall).copy(
-                    fontFamily = JetBrainsMonoFamily,
-                    fontWeight = FontWeight.Medium
+                    fontFamily = JetBrainsMonoFamily
                 ),
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,

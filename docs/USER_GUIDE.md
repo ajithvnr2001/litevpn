@@ -1,14 +1,14 @@
-# SwiftTunnel End-to-End User Guide (Phone, Tablet & Android TV — v6.0)
+# SwiftTunnel End-to-End User Guide (Phone, Tablet & Android TV — v7.0)
 
-This guide walks through installing **SwiftTunnel v6.0 (`vpnv6.apk`, 3.6 MB)**, swapping NordVPN API keys, choosing routing modes + **AdGuard / Quad9 / Custom IPv4 DNS**, creating **1-Tap Saved Profiles**, enabling **LAN Bypass**, **Auto-Failover & Wi-Fi/5G Handover**, tuning **MTU** & **1-Tap Lower-Load Server Hop**, adding the **Android Quick Settings Tile**, running the **Built-In IP & Leak Check**, reading the **Live Sparkline & Connection Details**, searching servers by **`#code`**, configuring **Split Tunneling**, setting up **Always-On Power-Up**, and **Exporting/Importing Config JSON** between Phone and Android TV.
+This guide covers installing **SwiftTunnel v7.0 (`vpnv7.apk`, 3.7 MB)**, navigating the 4-tab **Swiss Carbon UI** (**Tunnel**, **Servers**, **Apps**, **Tools**), configuring **Simultaneous Per-App Multi-Location Tunnels** (`App 1 → India`, `App 2 → US`), swapping NordVPN API keys, DNS presets (**AdGuard / Quad9 / Custom IPv4**), **1-Tap Saved Profiles**, **LAN Bypass**, **Auto-Failover & Wi-Fi/5G Handover**, **MTU & Server Hop**, **Quick Settings Tile**, **IP & Leak Check**, **`#code` search**, **Always-On Boot**, and **JSON Config Backup**.
 
 ---
 
 ## 1. Installation
 
 ### On Android Phone or Tablet
-1. Copy `vpnv6.apk` to your device (or download from your repository release).
-2. Tap `vpnv6.apk` and allow **Install unknown apps** if prompted.
+1. Copy `vpnv7.apk` to your device.
+2. Tap `vpnv7.apk` and allow **Install unknown apps** if prompted.
 3. Launch **SwiftTunnel** from your home screen.
 
 ### On Android TV / Google TV
@@ -18,25 +18,25 @@ This guide walks through installing **SwiftTunnel v6.0 (`vpnv6.apk`, 3.6 MB)**, 
 3. From your computer:
    ```bash
    adb connect <YOUR_TV_IP>:5555
-   adb install -r vpnv6.apk
+   adb install -r vpnv7.apk
    ```
 
 **Option B — Via TV Downloader / USB Drive:**
-1. Copy `vpnv6.apk` onto a USB drive (or host it on your LAN/GitHub Release).
+1. Copy `vpnv7.apk` onto a USB drive (or host it on your LAN/GitHub Release).
 2. Install using a file manager or Downloader app on your Android TV.
-3. Open **SwiftTunnel** from the Android TV **Apps** row (look for the SwiftTunnel dark navy TV banner).
+3. Open **SwiftTunnel** from the Android TV **Apps** row.
 
 ---
 
 ## 2. Setting Up or Swapping Your NordVPN API Key
 
-> **Note**: If you only want **Cloudflare 1.1.1.1 Only**, **Google 8.8.8.8 Only**, or **AdGuard / Quad9 / Custom DNS-Only** routing, you can skip this step completely.
+> **Note**: If you only want **Cloudflare 1.1.1.1 DNS**, **Google 8.8.8.8 DNS**, or **AdGuard / Quad9 / Custom DNS-Only** routing, you can skip this step completely.
 
 1. Log into your **Nord Account** on a web browser → **NordVPN** → **Set up NordVPN manually** → **Generate new token** (choose non-expiring for Always-On TV usage).
-2. Open SwiftTunnel → **Connect** tab → **NordVPN Credentials** card.
-3. Tap **Swap API Key** (or **Add Key**), paste your NordVPN access token, and tap **Save & Verify**.
+2. Open SwiftTunnel → **Tools** tab → **NORD API KEY** card.
+3. Tap **Swap Key**, paste your NordVPN access token, and tap **Save & Verify**.
 4. SwiftTunnel encrypts the key in **Android Keystore (AES-256-GCM)** and verifies it live against `api.nordvpn.com/v1/users/services/credentials`.
-5. Tap **Swap API Key** anytime to rotate to a different NordVPN account key, or **Clear** to remove it.
+5. Tap **Swap Key** anytime to rotate tokens, or **Remove Stored Key** to clear it.
 
 ---
 
@@ -141,37 +141,45 @@ Tap **Connect** (or press **OK** on your TV remote) to pin and connect immediate
 
 ---
 
-## 10. Per-App Split Tunneling (Phone & Android TV)
+## 10. Per-App Split Tunneling & Simultaneous Multi-Location Tunnels (v7.0 — Phone & Android TV)
 
-Open the **Split Tunnel** tab:
+Open the **Apps** tab to configure both standard Split Tunneling and **Simultaneous Per-App Country Tunnels**:
+
+### Split Tunnel Mode
 - **All Apps**: Every app routes through SwiftTunnel.
 - **Exclude Apps**: Selected apps bypass the tunnel (e.g., local banking apps).
-- **Include Only**: **Only** selected apps route through SwiftTunnel (e.g., route only **Brave Browser** through Albania, or only a specific Android TV streaming app through US `#13084`).
+- **Include Only**: **Only** selected apps (and any apps with a per-app country route) route through SwiftTunnel.
 
-Tap **Apply** (or disconnect and reconnect) after modifying split-tunnel selections so Android rebuilds the TUN per-app routing table.
+### Per-App Country Tunnels (`App 1 → India`, `App 2 → US` Simultaneously — Android 10+)
+1. In the **Apps** tab, locate an app (e.g., **Brave** or **Netflix TV**).
+2. Tap its **`Default`** route button on the right side of the row (or press **OK** on your Android TV remote).
+3. Search and pick any of the **118+ NordVPN countries** (e.g., **India** for Brave, **United States** for Netflix).
+4. Active rules appear as compact chips at the top (`Brave → 🇮🇳 IN`, `Netflix → 🇺🇸 US`) — tap any chip to reset it to Default.
+5. Return to **Tunnel** and tap **Connect** (or tap **Apply** if already connected).
+6. In the **TELEMETRY** card, **ACTIVE MULTI-APP TUNNELS** lists every concurrent WireGuard peer with its live server `#code`, country, routed app count, and per-peer traffic.
 
 ---
 
-## 11. Export & Import Config JSON (Phone ↔ Android TV — v6)
+## 11. Export & Import Config JSON (Phone ↔ Android TV)
 
-Easily clone your setup (Saved Profiles, Split-Tunnel lists, DNS presets, LAN bypass, MTU, and favorites) from your phone to your Android TV:
+Clone your setup (Saved Profiles, **Per-App Country Routes**, Split-Tunnel lists, DNS presets, LAN bypass, MTU, and favorites) between Phone and Android TV (see `import/export_eg.json` for a complete sample):
 
-1. In the **Connect** tab, scroll to **Backup & Transfer Config** (badged **`NO SECRETS`**).
+1. Open the **Tools** tab → **BACKUP JSON** card (badged **`SECRETS EXCLUDED`**).
 2. **On Android Phone/Tablet**:
-   - Tap **Export JSON** to save `swifttunnel-config.json` anywhere via Android's file picker (zero storage permissions required).
-   - Tap **Import JSON** on another device to load the file cleanly.
+   - Tap **Export** to save `swifttunnel-config.json` via Android's file picker (zero storage permissions).
+   - Tap **Import** on another device to restore.
 3. **On Android TV (No File Manager Required)**:
-   - Tap **Copy / Paste JSON (Android TV Friendly)** to open the built-in JSON transfer dialog.
-   - Copy or paste the JSON text (e.g., via Android TV Remote app on your phone) and tap **Import JSON**.
-4. **Security Reminder**: Your NordVPN API key and WireGuard private keys are **never** included in exported JSON — simply enter your NordVPN key once in **NordVPN Credentials** on the new device.
+   - Tap **Copy / Paste JSON (TV)** to open the built-in JSON transfer dialog.
+   - Copy or paste the JSON text and tap **Import**.
+4. **Security Reminder**: Your NordVPN API key and WireGuard private keys are **never** included in exported JSON — enter your NordVPN key once in **Tools → NORD API KEY** on the new device.
 
 ---
 
 ## 12. Always-On Auto-Connect on Power-Up
 
-1. Configure your preferred **Routing Mode**, **DNS Preset**, **Location / `#code`**, **Split Tunnel**, **LAN Bypass**, and **MTU**.
+1. Configure your preferred **Routing Mode**, **DNS Preset**, **Location / `#code`**, **Per-App Routes / Split Tunnel**, **LAN Bypass**, and **MTU**.
 2. Connect **at least once** interactively and tap **OK** on Android's system VPN consent dialog.
-3. Confirm **Auto-Connect on Power-Up** is toggled **ON** in the Connect tab.
+3. Open **Tools** → **ALWAYS-ON & BACKGROUND** and verify **Auto-Connect on Boot** is toggled **ON**.
 4. On phones/supported TVs, optionally tap **OS Always-On** to enable Android's native Always-On VPN lock *(do not enable "Block connections without VPN" if you use Split Tunnel Exclude/Include modes or LAN Bypass)*.
 
 ---

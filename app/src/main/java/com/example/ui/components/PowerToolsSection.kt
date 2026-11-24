@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.model.ConnectionMode
@@ -53,7 +54,6 @@ import com.example.ui.icons.AppIcons
 import com.example.ui.theme.CloudflareAmber
 import com.example.ui.theme.ElectricCyan
 import com.example.ui.theme.EmeraldProtected
-import com.example.ui.theme.GoogleAzure
 import com.example.ui.theme.JetBrainsMonoFamily
 
 private val MTU_PRESETS = listOf(1280, 1360, 1400, 1420)
@@ -86,14 +86,14 @@ fun DnsPresetsCard(
         modifier = modifier
             .fillMaxWidth()
             .testTag("dns_presets_card"),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
@@ -101,22 +101,14 @@ fun DnsPresetsCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Icon(
-                        imageVector = AppIcons.Dns,
-                        contentDescription = null,
-                        tint = ElectricCyan,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Text(
-                        text = "DNS Filter & Ad-Blocking",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                }
+                Text(
+                    text = "DNS FILTER",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = JetBrainsMonoFamily,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 Text(
                     text = if (activePrimary == activeSecondary) activePrimary else "$activePrimary / $activeSecondary",
                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
@@ -132,7 +124,6 @@ fun DnsPresetsCard(
                     title = "Mode Default",
                     subtitle = uiState.selectedMode.primaryDns,
                     selected = uiState.dnsPreset == DnsPreset.MODE_DEFAULT,
-                    accent = ElectricCyan,
                     onClick = { onSelectDnsPreset(DnsPreset.MODE_DEFAULT) },
                     modifier = Modifier
                         .weight(1f)
@@ -142,7 +133,6 @@ fun DnsPresetsCard(
                     title = "AdGuard",
                     subtitle = "94.140.14.14",
                     selected = uiState.dnsPreset == DnsPreset.ADGUARD_ADS,
-                    accent = EmeraldProtected,
                     onClick = { onSelectDnsPreset(DnsPreset.ADGUARD_ADS) },
                     modifier = Modifier
                         .weight(1f)
@@ -158,7 +148,6 @@ fun DnsPresetsCard(
                     title = "Quad9",
                     subtitle = "9.9.9.9",
                     selected = uiState.dnsPreset == DnsPreset.QUAD9_SECURITY,
-                    accent = GoogleAzure,
                     onClick = { onSelectDnsPreset(DnsPreset.QUAD9_SECURITY) },
                     modifier = Modifier
                         .weight(1f)
@@ -166,21 +155,14 @@ fun DnsPresetsCard(
                 )
                 DnsPresetChip(
                     title = "Custom IPv4",
-                    subtitle = uiState.customDnsPrimary.ifBlank { "Tap to set" },
+                    subtitle = uiState.customDnsPrimary.ifBlank { "Set IP" },
                     selected = uiState.dnsPreset == DnsPreset.CUSTOM,
-                    accent = CloudflareAmber,
                     onClick = { showCustomDnsDialog = true },
                     modifier = Modifier
                         .weight(1f)
                         .testTag("dns_preset_custom")
                 )
             }
-
-            Text(
-                text = uiState.dnsPreset.description,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }
@@ -190,29 +172,28 @@ private fun DnsPresetChip(
     title: String,
     subtitle: String,
     selected: Boolean,
-    accent: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
         modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(10.dp))
             .tvFocusableClickable(
-                shape = RoundedCornerShape(14.dp),
-                focusColor = accent,
+                shape = RoundedCornerShape(10.dp),
+                focusColor = ElectricCyan,
                 onClick = onClick
             ),
-        shape = RoundedCornerShape(14.dp),
-        color = if (selected) accent.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceContainerLow,
+        shape = RoundedCornerShape(10.dp),
+        color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh else MaterialTheme.colorScheme.surfaceContainerLow,
         border = BorderStroke(
-            width = if (selected) 1.5.dp else 1.dp,
-            color = if (selected) accent else MaterialTheme.colorScheme.outlineVariant
+            width = 1.dp,
+            color = if (selected) EmeraldProtected else MaterialTheme.colorScheme.outlineVariant
         )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 11.dp, vertical = 9.dp),
+                .padding(horizontal = 10.dp, vertical = 9.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -227,7 +208,7 @@ private fun DnsPresetChip(
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
-                    color = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (selected) EmeraldProtected else MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -235,8 +216,8 @@ private fun DnsPresetChip(
             if (selected) {
                 Icon(
                     imageVector = Icons.Default.Check,
-                    contentDescription = "Selected DNS preset",
-                    tint = accent,
+                    contentDescription = "Selected DNS",
+                    tint = EmeraldProtected,
                     modifier = Modifier.size(16.dp)
                 )
             }
@@ -268,14 +249,14 @@ fun SavedProfilesCard(
         modifier = modifier
             .fillMaxWidth()
             .testTag("saved_profiles_card"),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
@@ -283,49 +264,38 @@ fun SavedProfilesCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "1-Tap Saved Profiles",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Save mode, DNS, location #code, split apps & MTU",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "PROFILES",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = JetBrainsMonoFamily,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
                 OutlinedButton(
                     onClick = { showSaveDialog = true },
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     modifier = Modifier.testTag("save_current_profile_button")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Add,
                         contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(15.dp)
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Save Current")
+                    Text("Save", style = MaterialTheme.typography.labelMedium)
                 }
             }
 
             if (profiles.isEmpty()) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceContainerLow,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "No profiles yet. Configure your favorite TV Streaming, Gaming, or Ad-Block setup and tap Save Current.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(12.dp)
-                    )
-                }
+                Text(
+                    text = "No saved profiles yet.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     profiles.forEach { profile ->
                         val mode = ConnectionMode.fromId(profile.modeId)
                         val preset = DnsPreset.fromId(profile.dnsPresetId)
@@ -335,36 +305,29 @@ fun SavedProfilesCard(
                             profile.pinnedServerCode?.let { add(it) }
                                 ?: profile.cityName?.let { add(it) }
                             if (profile.lanBypassEnabled) add("LAN")
-                            add("MTU ${profile.mtu}")
-                        }.joinToString(" • ")
+                            add("${profile.mtu}")
+                        }.joinToString(" · ")
 
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(14.dp))
+                                .clip(RoundedCornerShape(10.dp))
                                 .tvFocusableClickable(
-                                    shape = RoundedCornerShape(14.dp),
+                                    shape = RoundedCornerShape(10.dp),
                                     focusColor = ElectricCyan,
                                     onClick = { onApplyProfile(profile) }
                                 )
                                 .testTag("saved_profile_${profile.id}"),
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(10.dp),
                             color = MaterialTheme.colorScheme.surfaceContainerLow,
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                         ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                                    .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = AppIcons.Bolt,
-                                    contentDescription = null,
-                                    tint = EmeraldProtected,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = profile.name,
@@ -391,7 +354,7 @@ fun SavedProfilesCard(
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Delete,
-                                        contentDescription = "Delete profile ${profile.name}",
+                                        contentDescription = "Delete ${profile.name}",
                                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                         modifier = Modifier.size(18.dp)
                                     )
@@ -418,14 +381,14 @@ fun NetworkTuningCard(
         modifier = modifier
             .fillMaxWidth()
             .testTag("network_tuning_card"),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
@@ -434,27 +397,20 @@ fun NetworkTuningCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Network Tuning & Resilience",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = "NETWORK",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = JetBrainsMonoFamily,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = ElectricCyan.copy(alpha = 0.14f)
-                ) {
-                    Text(
-                        text = "MTU ${uiState.customMtu}",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = JetBrainsMonoFamily,
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = ElectricCyan,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
-                }
+                Text(
+                    text = "MTU ${uiState.customMtu}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                    color = ElectricCyan
+                )
             }
 
-            // LAN / Local Network Bypass toggle
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -462,12 +418,12 @@ fun NetworkTuningCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "LAN / Local Network Bypass",
+                        text = "LAN Bypass",
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Keep Chromecast, Plex/Jellyfin, NAS & printers reachable",
+                        text = "Keep local Cast, Plex, NAS & printers direct",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -480,9 +436,8 @@ fun NetworkTuningCard(
                 )
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-            // Auto-Failover & Network Switch Handover toggle
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -490,12 +445,12 @@ fun NetworkTuningCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Auto-Failover & Wi-Fi/5G Handover",
+                        text = "Auto-Failover",
                         style = MaterialTheme.typography.titleSmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "Re-handshakes on network switch & falls back to lowest-load server",
+                        text = "Re-handshake on Wi-Fi/5G switch or stall",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -508,12 +463,11 @@ fun NetworkTuningCard(
                 )
             }
 
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
-            // Custom MTU selector chips
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(
-                    text = "WireGuard Packet MTU (1280 safe mobile • 1420 fast Wi-Fi)",
+                    text = "MTU (bytes)",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -526,29 +480,32 @@ fun NetworkTuningCard(
                         Surface(
                             modifier = Modifier
                                 .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
+                                .clip(RoundedCornerShape(8.dp))
                                 .tvFocusableClickable(
-                                    shape = RoundedCornerShape(10.dp),
+                                    shape = RoundedCornerShape(8.dp),
                                     focusColor = ElectricCyan,
                                     onClick = { onSelectMtu(mtuValue) }
                                 )
                                 .testTag("mtu_chip_$mtuValue"),
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (selected) ElectricCyan.copy(alpha = 0.16f)
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (selected) MaterialTheme.colorScheme.surfaceContainerHigh
                             else MaterialTheme.colorScheme.surfaceContainerLow,
                             border = BorderStroke(
-                                width = if (selected) 1.5.dp else 1.dp,
-                                color = if (selected) ElectricCyan else MaterialTheme.colorScheme.outlineVariant
+                                width = 1.dp,
+                                color = if (selected) EmeraldProtected else MaterialTheme.colorScheme.outlineVariant
                             )
                         ) {
                             Text(
                                 text = "$mtuValue",
                                 style = MaterialTheme.typography.labelMedium.copy(
                                     fontFamily = JetBrainsMonoFamily,
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.SemiBold
                                 ),
-                                color = if (selected) ElectricCyan else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp),
+                                color = if (selected) EmeraldProtected else MaterialTheme.colorScheme.onSurface,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 10.dp),
                                 maxLines = 1
                             )
                         }
@@ -556,10 +513,10 @@ fun NetworkTuningCard(
                 }
             }
 
-            // 1-Tap Server Hop button
-            Button(
+            OutlinedButton(
                 onClick = onHopLowerLoadServer,
                 enabled = uiState.selectedMode.usesVpn && !uiState.isHoppingServer,
+                shape = RoundedCornerShape(10.dp),
                 modifier = Modifier
                     .fillMaxWidth()
                     .testTag("hop_lower_load_server_button")
@@ -567,19 +524,18 @@ fun NetworkTuningCard(
                 if (uiState.isHoppingServer) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.onPrimary
+                        strokeWidth = 2.dp
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Finding Lower-Load Server…")
+                    Text("Finding lower-load server…")
                 } else {
                     Icon(
                         imageVector = Icons.Default.Refresh,
                         contentDescription = null,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Hop to Lower-Load Server in Same Region")
+                    Text("Hop to Lower-Load Server")
                 }
             }
         }
@@ -598,14 +554,14 @@ fun IpLeakCheckCard(
         modifier = modifier
             .fillMaxWidth()
             .testTag("ip_leak_check_card"),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
@@ -615,20 +571,24 @@ fun IpLeakCheckCard(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Built-In IP & Leak Verification",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        text = "IP & LEAK CHECK",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = JetBrainsMonoFamily,
+                            fontWeight = FontWeight.SemiBold
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "Verifies exit IP, country, IPv6 leak block & active DNS",
+                        text = "Exit IP, IPv6 leak block & DNS",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 OutlinedButton(
                     onClick = onRunLeakCheck,
                     enabled = !isRunning,
+                    shape = RoundedCornerShape(8.dp),
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     modifier = Modifier.testTag("run_leak_check_button")
                 ) {
@@ -647,13 +607,13 @@ fun IpLeakCheckCard(
 
             if (result != null) {
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(10.dp),
                     color = MaterialTheme.colorScheme.surfaceContainerLow,
                     border = BorderStroke(
                         1.dp,
-                        if (result.errorMessage != null) MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                        if (result.errorMessage != null) MaterialTheme.colorScheme.error
                         else if (result.ipMatchesNordServer || (isVpnConnected && result.ipv6LeakBlocked))
-                            EmeraldProtected.copy(alpha = 0.45f)
+                            EmeraldProtected.copy(alpha = 0.6f)
                         else MaterialTheme.colorScheme.outlineVariant
                     ),
                     modifier = Modifier
@@ -663,8 +623,8 @@ fun IpLeakCheckCard(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                            .padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         if (result.errorMessage != null) {
                             Text(
@@ -679,7 +639,7 @@ fun IpLeakCheckCard(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "EXIT IP: ${result.exitIp}",
+                                    text = result.exitIp,
                                     style = MaterialTheme.typography.labelLarge.copy(
                                         fontFamily = JetBrainsMonoFamily,
                                         fontWeight = FontWeight.Bold
@@ -687,7 +647,7 @@ fun IpLeakCheckCard(
                                     color = ElectricCyan
                                 )
                                 Text(
-                                    text = "${result.countryCode} • ${result.colo}",
+                                    text = "${result.countryCode} · ${result.colo}",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontFamily = JetBrainsMonoFamily
                                     ),
@@ -696,10 +656,10 @@ fun IpLeakCheckCard(
                             }
 
                             val serverMatchLabel = when {
-                                result.expectedServerIp == null -> "Direct DNS Mode (No VPN Hop)"
-                                result.ipMatchesNordServer -> "✓ Exit IP matches Nord Server (${result.expectedServerIp})"
-                                isVpnConnected -> "VPN Exit Routed (Expected ${result.expectedServerIp})"
-                                else -> "Disconnected — Connect VPN to mask IP"
+                                result.expectedServerIp == null -> "Direct DNS mode"
+                                result.ipMatchesNordServer -> "Matches Nord server ${result.expectedServerIp}"
+                                isVpnConnected -> "VPN active (expected ${result.expectedServerIp})"
+                                else -> "Disconnected"
                             }
                             Text(
                                 text = serverMatchLabel,
@@ -713,15 +673,15 @@ fun IpLeakCheckCard(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text(
-                                    text = if (result.ipv6LeakBlocked) "IPv6 Leak: BLOCKED" else "IPv6: Active",
+                                    text = if (result.ipv6LeakBlocked) "IPv6 BLOCKED" else "IPv6 OPEN",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontFamily = JetBrainsMonoFamily,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.SemiBold
                                     ),
                                     color = if (result.ipv6LeakBlocked) EmeraldProtected else CloudflareAmber
                                 )
                                 Text(
-                                    text = "DNS: ${result.activeDnsSummary}",
+                                    text = result.activeDnsSummary,
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontFamily = JetBrainsMonoFamily
                                     ),
@@ -764,14 +724,14 @@ fun ConfigBackupCard(
         modifier = modifier
             .fillMaxWidth()
             .testTag("config_backup_card"),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surface,
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Row(
@@ -780,28 +740,22 @@ fun ConfigBackupCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(
-                    text = "Backup & Transfer Config",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    text = "BACKUP JSON",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = JetBrainsMonoFamily,
+                        fontWeight = FontWeight.SemiBold
+                    ),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = EmeraldProtected.copy(alpha = 0.14f)
-                ) {
-                    Text(
-                        text = "NO SECRETS",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = JetBrainsMonoFamily,
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = EmeraldProtected,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
-                    )
-                }
+                Text(
+                    text = "SECRETS EXCLUDED",
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = JetBrainsMonoFamily),
+                    color = EmeraldProtected
+                )
             }
 
             Text(
-                text = "Transfer profiles, split-tunnel lists, DNS presets, LAN bypass & MTU between Android Phone and Android TV. Your Nord API key and WireGuard private keys are never exported.",
+                text = "Export or import profiles, app routes, split lists, DNS, LAN bypass & MTU. API keys stay on-device.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -812,19 +766,21 @@ fun ConfigBackupCard(
             ) {
                 OutlinedButton(
                     onClick = onExportBackupFile,
+                    shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
                         .weight(1f)
                         .testTag("export_backup_file_button")
                 ) {
-                    Text("Export JSON")
+                    Text("Export")
                 }
                 OutlinedButton(
                     onClick = onImportBackupFile,
+                    shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
                         .weight(1f)
                         .testTag("import_backup_file_button")
                 ) {
-                    Text("Import JSON")
+                    Text("Import")
                 }
             }
 
@@ -840,7 +796,7 @@ fun ConfigBackupCard(
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Copy / Paste JSON (Android TV Friendly)")
+                Text("Copy / Paste JSON (TV)")
             }
         }
     }
@@ -863,15 +819,10 @@ private fun CustomDnsDialog(
         title = { Text("Custom IPv4 DNS") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(
-                    text = "Set custom primary and secondary IPv4 resolvers (e.g. NextDNS, ControlD, AdGuard, or Pi-hole).",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 OutlinedTextField(
                     value = primary,
                     onValueChange = { primary = it },
-                    label = { Text("Primary IPv4 DNS") },
+                    label = { Text("Primary IPv4") },
                     placeholder = { Text("94.140.14.14") },
                     singleLine = true,
                     isError = primary.isNotBlank() && !primaryValid,
@@ -882,7 +833,7 @@ private fun CustomDnsDialog(
                 OutlinedTextField(
                     value = secondary,
                     onValueChange = { secondary = it },
-                    label = { Text("Secondary IPv4 DNS (optional)") },
+                    label = { Text("Secondary IPv4 (optional)") },
                     placeholder = { Text("94.140.15.15") },
                     singleLine = true,
                     isError = !secondaryValid,
@@ -898,7 +849,7 @@ private fun CustomDnsDialog(
                 enabled = primaryValid && secondaryValid,
                 modifier = Modifier.testTag("save_custom_dns_confirm")
             ) {
-                Text("Apply DNS")
+                Text("Apply")
             }
         },
         dismissButton = {
@@ -918,25 +869,18 @@ private fun SaveProfileDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Save Current Setup as Profile") },
+        title = { Text("Save Profile") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Saves your current routing mode, DNS preset, Nord location/#code, split-tunnel apps, LAN bypass, and MTU.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it.take(32) },
-                    label = { Text("Profile Name") },
-                    placeholder = { Text("e.g. US Streaming + AdGuard") },
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .testTag("profile_name_input")
-                )
-            }
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it.take(32) },
+                label = { Text("Name") },
+                placeholder = { Text("e.g. US TV + AdGuard") },
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("profile_name_input")
+            )
         },
         confirmButton = {
             Button(
@@ -944,7 +888,7 @@ private fun SaveProfileDialog(
                 enabled = name.trim().isNotEmpty(),
                 modifier = Modifier.testTag("confirm_save_profile_button")
             ) {
-                Text("Save Profile")
+                Text("Save")
             }
         },
         dismissButton = {
@@ -966,18 +910,13 @@ private fun JsonTransferDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Copy / Paste Config JSON") },
+        title = { Text("Config JSON") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Copy this secret-free JSON to back up your config, or paste a SwiftTunnel backup JSON below and tap Import.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 OutlinedTextField(
                     value = jsonText,
                     onValueChange = { jsonText = it },
-                    label = { Text("SwiftTunnel Config JSON") },
+                    label = { Text("JSON") },
                     minLines = 6,
                     maxLines = 10,
                     modifier = Modifier
@@ -991,7 +930,7 @@ private fun JsonTransferDialog(
                         .fillMaxWidth()
                         .testTag("copy_backup_json_button")
                 ) {
-                    Text("Copy Current Backup JSON")
+                    Text("Copy Current JSON")
                 }
             }
         },
@@ -1001,7 +940,7 @@ private fun JsonTransferDialog(
                 enabled = jsonText.trim().startsWith("{"),
                 modifier = Modifier.testTag("confirm_import_json_button")
             ) {
-                Text("Import JSON")
+                Text("Import")
             }
         },
         dismissButton = {

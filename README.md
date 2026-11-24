@@ -1,8 +1,8 @@
 # SwiftTunnel
 
-An ultra-lightweight (**3.6 MB**, strictly under 5 MB) native Android & Android TV VPN and DNS routing client powered by the **NordVPN v1 API** and a zero-dependency pure-Kotlin **WireGuard (`Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s`)** tunnel engine.
+An ultra-lightweight (**3.7 MB**, strictly under 5 MB) native Android & Android TV VPN and DNS routing client powered by the **NordVPN v1 API** and a zero-dependency pure-Kotlin **WireGuard (`Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s`)** tunnel engine.
 
-Designed for phones, tablets, and Android TV / Google TV boxes with **Always-On boot auto-connect**, **per-app Split Tunneling**, **Cloudflare `1.1.1.1` / Google `8.8.8.8` / AdGuard / Quad9 / Custom IPv4 DNS routing**, **LAN / Local Network Bypass**, **Auto-Failover & Wi-Fi/5G Handover**, **Android Quick Settings Tile**, **1-Tap Saved Profiles**, **Built-In IP & Leak Verification**, **Live Throughput Sparkline Graph**, **Custom MTU + 1-Tap Server Hop**, **Secret-Free JSON Config Backup**, **live server `#code` search**, and **hot-swappable NordVPN API keys** encrypted via Android Keystore.
+Built for phones, tablets, and Android TV / Google TV with **Simultaneous Per-App Multi-Location Tunnels** (`App 1 → India`, `App 2 → US`, `App 3 → Albania` at the same time on Android 10+), a stripped-back **Swiss Carbon 4-tab UI** (`Tunnel`, `Servers`, `Apps`, `Tools`), **Always-On boot auto-connect**, **per-app Split Tunneling**, **Cloudflare `1.1.1.1` / Google `8.8.8.8` / AdGuard / Quad9 / Custom IPv4 DNS**, **LAN Bypass**, **Auto-Failover & Wi-Fi/5G Handover**, **Android Quick Settings Tile**, **1-Tap Saved Profiles**, **IP & Leak Check**, **Live Throughput Sparkline**, **Custom MTU + 1-Tap Server Hop**, **Secret-Free JSON Backup** (including `import/export_eg.json`), **live server `#code` search**, and **hot-swappable NordVPN API keys** encrypted via Android Keystore.
 
 ---
 
@@ -11,7 +11,7 @@ Designed for phones, tablets, and Android TV / Google TV boxes with **Always-On 
 1. [Key Features](#key-features)
 2. [Routing & DNS Modes + Filter Presets](#routing--dns-modes--filter-presets)
 3. [Architecture Overview](#architecture-overview)
-4. [Ultra-Lightweight Size (3.6 MB < 5 MB)](#ultra-lightweight-size-36-mb--5-mb)
+4. [Ultra-Lightweight Size (3.7 MB < 5 MB)](#ultra-lightweight-size-37-mb--5-mb)
 5. [Project Structure](#project-structure)
 6. [Getting Started & Building from Source](#getting-started--building-from-source)
 7. [Android TV, Quick Settings Tile & Always-On Power-Up](#android-tv-quick-settings-tile--always-on-power-up)
@@ -24,6 +24,8 @@ Designed for phones, tablets, and Android TV / Google TV boxes with **Always-On 
 
 ## Key Features
 
+- **Simultaneous Per-App Multi-Location Tunnels (Android 10+ / API 29+)**: Route individual apps through different NordVPN countries at the same time (e.g., **Brave → India**, **Netflix TV → United States**, **Default → Albania**). Uses `ConnectivityManager.getConnectionOwnerUid()` + pure-Kotlin `Ipv4PacketInspector` flow caching + `MultiPeerWireGuardEngine` running concurrent NordLynx WireGuard sessions over a single Android `VpnService` TUN interface — zero root required.
+- **No-AI-Slop Swiss Carbon 4-Tab UI (Phone & Android TV)**: Clean neutral matte carbon surfaces (`#0B0C0E` / `#131518`), `1.dp` hairlines, tabular monospace metrics, zero pulsing radar orbs or neon gradients, and 4 focused tabs (**Tunnel**, **Servers**, **Apps**, **Tools**) using a bottom bar on phones and an overscan-safe left `NavigationRail` + 2-column layout on Android TV / tablets.
 - **Pure-Kotlin WireGuard (NordLynx) Engine**: Full RFC-compliant `X25519` (RFC 7748), `BLAKE2s` (RFC 7693), `ChaCha20-Poly1305` / `XChaCha20-Poly1305` (RFC 8439), `TAI64N`, and `Noise_IKpsk2` handshake + transport protocol over UDP port `51820` — zero native `.so` binaries required.
 - **5 Flexible Routing Modes + DNS Ad-Blocking & Custom IPv4 Presets**:
   - Combine NordVPN WireGuard with Cloudflare (`1.1.1.1`) or Google (`8.8.8.8`), use NordVPN default DNS, or run lightweight DNS-only protection (`1.1.1.1` or `8.8.8.8`).
@@ -91,13 +93,14 @@ Designed for phones, tablets, and Android TV / Google TV boxes with **Always-On 
 
 ```
 +---------------------------------------------------------------------------------+
-|                           Jetpack Compose UI Layer                              |
+|                   Jetpack Compose UI Layer (Swiss Carbon 4-Tab)                 |
 |  MainActivity (Phone NavBar / Tablet & Android TV Overscan-Safe NavRail + SAF)  |
-|  ├── ConnectScreen      (Power Orb, ConnectionDetailsCard + Canvas Sparkline,   |
-|  │                       PowerToolsSection: Profiles, DNS Presets, LAN/MTU/Hop, |
-|  │                       IP & Leak Check, Secret-Free JSON Backup, API Key)     |
+|  ├── ConnectScreen      (Tunnel Control, ConnectionDetailsCard + Multi-App      |
+|  │                       Active Tunnels + Sparkline, Routing Mode, Profiles)    |
 |  ├── LocationsScreen    (Country/City/#Code Search, Nearest Strip, Live Servers)|
-|  └── SplitTunnelScreen  (All / Exclude / Include, Phone + TV App Picker)        |
+|  ├── SplitTunnelScreen  (All/Exclude/Include + Per-App Country Route Picker)    |
+|  └── ToolsScreen        (Nord API Key, DNS Filter, LAN/Failover/MTU, Leak Check,|
+|                          Always-On Boot, Secret-Free JSON Backup)               |
 +---------------------------------------+-----------------------------------------+
                                         | StateFlow (MainViewModel)
 +---------------------------------------v-----------------------------------------+
@@ -105,9 +108,9 @@ Designed for phones, tablets, and Android TV / Google TV boxes with **Always-On 
 |  ├── NordApiClient          (HttpURLConnection -> api.nordvpn.com/v1/* + trace) |
 |  ├── ServerCodeMatcher      (Numbers, #codes, ranges, prefixes, city+code)      |
 |  ├── NordCountryCatalog     (118+ offline fallback countries + live sync)       |
-|  ├── ConfigBackupCodec      (Zero-dep RFC 8259 JSON backup, secretsExcluded)    |
+|  ├── ConfigBackupCodec      (Zero-dep JSON backup + appRouteRules, no secrets)  |
 |  ├── SecureKeyStorage       (Android Keystore AES-256-GCM runtime token)        |
-|  ├── PreferencesRepository  (Mode, DNS Preset, Profiles, LAN/MTU, Split, Boot)  |
+|  ├── PreferencesRepository  (Mode, DNS, Profiles, App Routes, LAN/MTU, Split)   |
 |  └── InstalledAppsRepository(CATEGORY_LAUNCHER + CATEGORY_LEANBACK_LAUNCHER)    |
 +---------------------------------------+-----------------------------------------+
                                         | Intents / VpnKeyBridge / VpnStateHolder
@@ -117,7 +120,9 @@ Designed for phones, tablets, and Android TV / Google TV boxes with **Always-On 
 |  ├── BootCompletedReceiver  (BOOT_COMPLETED / QUICKBOOT / PACKAGE_REPLACED)     |
 |  └── SwiftTunnelVpnService  (VpnService + FGS + Handover Callback + Failover)   |
 |        ├── LanBypassRouteCalculator (API 33+ excludeRoute / API 24-32 CIDR set) |
-|        ├── WireGuardTunnelEngine    (Custom MTU + TUN + ::/0 IPv6 Leak Block)   |
+|        ├── Ipv4PacketInspector      (TCP/UDP 4-tuple + UID->Peer flow cache)    |
+|        ├── MultiPeerWireGuardEngine (Concurrent App->Country NordLynx tunnels)  |
+|        ├── WireGuardTunnelEngine    (Single-Peer Custom MTU + IPv6 Leak Block)  |
 |        │     ├── WireGuardSession   (Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s)     |
 |        │     └── WireGuardCrypto    (Pure-Kotlin X25519/BLAKE2s/ChaCha20)       |
 |        └── DnsPacketForwarder       (4-worker pool + 256-entry LRU DNS cache)   |
@@ -241,7 +246,7 @@ rm -f app/build/outputs/apk/debug/app-debug.apk
 gradle :app:assembleDebug
 ```
 
-Output APK location: `app/build/outputs/apk/debug/app-debug.apk` (shipped in repo root as `vpnv6.apk`, **3.6 MB**).
+Output APK location: `app/build/outputs/apk/debug/app-debug.apk` (shipped in repo root as `vpnv7.apk`, **3.7 MB**).
 
 For a signed release build (requires `KEYSTORE_PATH`, `STORE_PASSWORD`, and `KEY_PASSWORD` environment variables):
 
@@ -253,20 +258,20 @@ gradle :app:assembleRelease
 
 ```bash
 # Phone (USB)
-adb install -r vpnv6.apk
+adb install -r vpnv7.apk
 
 # Android TV / Google TV (Network ADB)
 adb connect <TV_IP_ADDRESS>:5555
-adb install -r vpnv6.apk
+adb install -r vpnv7.apk
 ```
 
 ---
 
 ## Android TV, Quick Settings Tile & Always-On Power-Up
 
-1. **Android TV Command Center**: Open **SwiftTunnel** from your Android TV Apps row. The **Connect** tab renders in a 2-Column Command Center keeping the Power Orb, **Connection Details & Live Sparkline Stats**, and **IP & Leak Verification** on the left, while **1-Tap Saved Profiles**, Routing Modes, **AdGuard/Quad9/Custom DNS**, **LAN Bypass / Failover / MTU / Server Hop**, Split Tunneling, and **Copy/Paste Config Backup** stay cleanly accessible on the right with D-Pad focus rings.
+1. **Android TV 2-Column Layout**: Open **SwiftTunnel** from your Android TV Apps row. The **Tunnel** and **Tools** tabs automatically render in a clean 2-column Swiss layout with an overscan-safe left `NavigationRail` and high-contrast D-Pad focus rings (`tvFocusableClickable`).
 2. **Android Phone Quick Settings Tile**: Pull down your notification shade twice → tap **Edit (pencil)** → drag **SwiftTunnel** into your active tiles for 1-tap connect/disconnect with live `#code` and city status.
-3. **Always-On Boot Auto-Connect**: Connect once interactively so Android grants VPN permission (`VpnService.prepare`), ensure **Auto-Connect on Power-Up** is **ON**, and SwiftTunnel automatically reconnects after every device or TV reboot — restoring your exact mode, DNS preset, pointed server `#code`, split-tunnel apps, LAN bypass, and MTU.
+3. **Always-On Boot Auto-Connect**: Connect once interactively so Android grants VPN permission (`VpnService.prepare`), ensure **Auto-Connect on Boot** is **ON** in **Tools**, and SwiftTunnel automatically reconnects after every device or TV reboot — restoring your exact mode, DNS preset, pointed server `#code`, per-app country routes, split-tunnel apps, LAN bypass, and MTU.
 
 See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) for full step-by-step instructions.
 
@@ -274,25 +279,23 @@ See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) for full step-by-step instruction
 
 ## Testing & Verification
 
-Run all 4 pure-JVM unit test suites:
+Run all 5 pure-JVM unit test suites:
 
 ```bash
 gradle :app:testDebugUnitTest \
   --tests "com.example.vpn.WireGuardCryptoTest" \
   --tests "com.example.data.ServerCodeMatcherTest" \
   --tests "com.example.model.ConnectionTelemetryTest" \
-  --tests "com.example.v6.V6PowerFeaturesTest"
+  --tests "com.example.v6.V6PowerFeaturesTest" \
+  --tests "com.example.v7.V7MultiAppTunnelTest"
 ```
 
 Verified test suites:
 1. **`WireGuardCryptoTest`**: RFC 7748 X25519, RFC 7693 BLAKE2s, RFC 8439 ChaCha20-Poly1305 AEAD, and full `Noise_IKpsk2_25519_ChaChaPoly_BLAKE2s` handshake + bidirectional encrypted Type 4 transport round-trip.
 2. **`ServerCodeMatcherTest`**: Plain server numbers (`13084`, `9948`, `13229`), `#`-prefixed codes (`#12790`, `#11519`, `#11640`), range expansion (`#12790-12792`, `#12394-12398`), country/hostname prefixes (`us13084`, `uk2410` → `GB`), and prefix autocomplete.
 3. **`ConnectionTelemetryTest`**: Connected WireGuard snapshot, DNS-only snapshot, standby snapshot, and byte/rate/duration formatters.
-4. **`V6PowerFeaturesTest`**:
-   - `LanBypassRouteCalculator` CIDR complement verification (100% of RFC 1918 LAN, loopback, link-local, mDNS/Chromecast multicast, and broadcast IPs excluded; 100% of public internet IPs routed through VPN).
-   - `isValidIpv4Address` & `resolveEffectiveDns` (AdGuard, Quad9, Custom IPv4, invalid-input fallback).
-   - `ConfigBackupCodec` round-trip serialization, MTU clamping (`1280..1420`), invalid IPv4 sanitization, and strict `"secretsExcluded": true` invariant.
-   - v6 telemetry fields (`AdGuard` DNS override, `LAN Bypass ON`, `MTU 1360`).
+4. **`V6PowerFeaturesTest`**: `LanBypassRouteCalculator` CIDR complement verification, `isValidIpv4Address` & `resolveEffectiveDns`, `ConfigBackupCodec` round-trip & MTU clamping, and v6 telemetry fields.
+5. **`V7MultiAppTunnelTest`**: `Ipv4PacketInspector` TCP/UDP 4-tuple extraction (standard IHL=5, IP options IHL=6, ICMP/IPv6/truncated rejection), `AppPeerRouteTable` multi-UID simultaneous routing (`UID 10101 → India`, `UID 10202 → US`, `UID 10303 → Default`) with flow-cache verification & bounded eviction, and `ConfigBackupCodec` v7 `appRouteRules` round-trip with `"secretsExcluded": true`.
 
 ---
 
@@ -321,6 +324,7 @@ Full details in [`docs/API_AND_SECURITY.md`](docs/API_AND_SECURITY.md).
 
 ## Release History
 
+- **v7.0 (`vpnv7.apk`, 3.7 MB)**: Added **Simultaneous Per-App Multi-Location Tunnels** (`App 1 → India`, `App 2 → US`, `Default → Albania` concurrently on Android 10+ via `ConnectivityManager.getConnectionOwnerUid()`, `Ipv4PacketInspector`, and `MultiPeerWireGuardEngine` with live per-peer telemetry & `appRouteRules` JSON backup support) and shipped a complete **No-AI-Slop Swiss Carbon 4-Tab UI Redesign** (`Tunnel`, `Servers`, `Apps`, `Tools`) for both Android Mobile and Android TV, removing pulsing neon orbs and card clutter, plus `V7MultiAppTunnelTest` and updated `import/export_eg.json`.
 - **v6.0 (`vpnv6.apk`, 3.6 MB)**: Added **all 9 zero-bloat power features** while keeping APK size strictly under 5 MB: (1) **LAN / Local Network Bypass** (`excludeRoute` on Android 13+ & exact IPv4 CIDR complement routes on Android 7–12), (2) **Auto-Failover & Wi-Fi/5G Network Switch Handover**, (3) **Android Quick Settings Tile** (`SwiftTunnelTileService`), (4) **Ad-Blocking & Custom IPv4 DNS Presets** (AdGuard `94.140.14.14`, Quad9 `9.9.9.9`, validated Custom IPv4), (5) **1-Tap Saved Profiles**, (6) **Built-In IP & Leak Verification Test**, (7) **Live 30-Second Canvas Throughput Sparkline Graph**, (8) **Custom WireGuard MTU (`1280`–`1420`) & 1-Tap Lower-Load Server Hop**, and (9) **Secret-Free JSON Config Export / Import** (SAF + Android TV Copy/Paste dialog), plus `V6PowerFeaturesTest` and updated end-to-end docs.
 - **v5.0 (`vpnv5.apk`, 3.5 MB)**: Added dedicated **Connection Details & Live Telemetry Stats** dashboard for Android mobile and Android TV showing active **Location `#Code`**, resolved **City & Country**, endpoint, tunnel IP, live ↓/↑ throughput, totals, latency, server load `%`, 2-Column Android TV Command Center, and `ConnectionTelemetryTest`.
 - **v4.0 (`vpnv4.apk`, 3.5 MB)**: Added live NordVPN **Server Number / `#Code` Search** across ~6,000+ NordLynx servers (numbers, `#codes`, ranges, country prefixes, city+code), memory-safe gzip `JsonReader` streaming, and `ServerCodeMatcherTest`.

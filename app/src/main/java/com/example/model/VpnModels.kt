@@ -297,6 +297,61 @@ data class LeakCheckResult(
     val errorMessage: String? = null
 )
 
+data class AppRouteRule(
+    val packageName: String,
+    val countryId: Int,
+    val countryName: String,
+    val countryCode: String,
+    val cityName: String? = null,
+    val pinnedServerHostname: String? = null,
+    val pinnedServerCode: String? = null
+) {
+    val flagEmoji: String
+        get() = countryCodeToFlag(countryCode)
+
+    val routeKey: String
+        get() = buildString {
+            append(countryId)
+            append('|')
+            append(cityName.orEmpty().lowercase())
+            append('|')
+            append(pinnedServerHostname.orEmpty().lowercase())
+        }
+
+    val shortTargetLabel: String
+        get() = buildString {
+            append(flagEmoji)
+            append(' ')
+            append(countryCode.uppercase().ifBlank { countryName.take(2).uppercase() })
+            if (!pinnedServerCode.isNullOrBlank()) {
+                append(' ')
+                append(pinnedServerCode)
+            } else if (!cityName.isNullOrBlank()) {
+                append(" · ")
+                append(cityName)
+            }
+        }
+}
+
+data class ActivePeerTunnelSummary(
+    val routeKey: String,
+    val countryId: Int,
+    val countryName: String,
+    val countryCode: String,
+    val cityName: String,
+    val serverCodeTag: String,
+    val hostname: String,
+    val stationIp: String,
+    val loadPercent: Int,
+    val appPackages: List<String>,
+    val isDefaultPeer: Boolean = false,
+    val bytesTx: Long = 0L,
+    val bytesRx: Long = 0L
+) {
+    val flagEmoji: String
+        get() = countryCodeToFlag(countryCode)
+}
+
 data class VpnSessionState(
     val status: TunnelStatus = TunnelStatus.DISCONNECTED,
     val mode: ConnectionMode = ConnectionMode.CLOUDFLARE_PLUS_VPN,
@@ -314,6 +369,7 @@ data class VpnSessionState(
     val isWireGuardVerified: Boolean = false,
     val lanBypassEnabled: Boolean = false,
     val mtu: Int = 1280,
+    val activePeerTunnels: List<ActivePeerTunnelSummary> = emptyList(),
     val errorMessage: String? = null
 )
 

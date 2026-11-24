@@ -10,19 +10,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
-private val TacticalDarkColorScheme = darkColorScheme(
-    primary = ElectricCyan,
-    onPrimary = OnElectricCyan,
-    primaryContainer = CyanContainer,
-    onPrimaryContainer = OnCyanContainer,
+private val TechnicalDarkColorScheme = darkColorScheme(
+    primary = InkLight,
+    onPrimary = ObsidianBg,
+    primaryContainer = ObsidianSurfaceHighest,
+    onPrimaryContainer = InkLight,
     secondary = EmeraldProtected,
-    onSecondary = Color(0xFF002110),
+    onSecondary = Color(0xFF052E16),
     secondaryContainer = EmeraldContainer,
     onSecondaryContainer = OnEmeraldContainer,
-    tertiary = CloudflareAmber,
-    onTertiary = Color(0xFF2B1700),
-    tertiaryContainer = CloudflareAmberContainer,
-    onTertiaryContainer = Color(0xFFFFDDB5),
+    tertiary = ElectricCyan,
+    onTertiary = OnElectricCyan,
+    tertiaryContainer = CyanContainer,
+    onTertiaryContainer = OnCyanContainer,
     background = ObsidianBg,
     onBackground = InkLight,
     surface = ObsidianSurface,
@@ -30,15 +30,15 @@ private val TacticalDarkColorScheme = darkColorScheme(
     surfaceVariant = ObsidianSurfaceHigh,
     onSurfaceVariant = InkMuted,
     surfaceContainerLowest = ObsidianBg,
-    surfaceContainerLow = ObsidianSurface,
+    surfaceContainerLow = ObsidianSurfaceHigh,
     surfaceContainer = ObsidianSurfaceHigh,
     surfaceContainerHigh = ObsidianSurfaceHighest,
     outline = ObsidianOutline,
-    outlineVariant = Color(0xFF1D2942),
+    outlineVariant = HairlineBorder,
     error = CoralError,
-    onError = Color(0xFF3E0006),
+    onError = Color(0xFF2B0709),
     errorContainer = CoralErrorContainer,
-    onErrorContainer = Color(0xFFFFDAD6)
+    onErrorContainer = Color(0xFFFECACA)
 )
 
 private val CrispLightColorScheme = lightColorScheme(
@@ -49,11 +49,11 @@ private val CrispLightColorScheme = lightColorScheme(
     secondary = EmeraldLight,
     onSecondary = Color.White,
     secondaryContainer = EmeraldLightContainer,
-    onSecondaryContainer = Color(0xFF002111),
-    tertiary = Color(0xFFD16D00),
+    onSecondaryContainer = Color(0xFF052E16),
+    tertiary = Color(0xFF0284C7),
     onTertiary = Color.White,
-    tertiaryContainer = Color(0xFFFFE5C7),
-    onTertiaryContainer = Color(0xFF2D1600),
+    tertiaryContainer = Color(0xFFE0F2FE),
+    onTertiaryContainer = Color(0xFF0C4A6E),
     background = FrostBg,
     onBackground = InkDark,
     surface = FrostSurface,
@@ -61,22 +61,22 @@ private val CrispLightColorScheme = lightColorScheme(
     surfaceVariant = FrostSurfaceHigh,
     onSurfaceVariant = InkDarkMuted,
     surfaceContainerLowest = Color.White,
-    surfaceContainerLow = FrostSurface,
+    surfaceContainerLow = FrostSurfaceHigh,
     surfaceContainer = FrostSurfaceHigh,
-    surfaceContainerHigh = Color(0xFFDDE6F5),
+    surfaceContainerHigh = Color(0xFFE5E7EB),
     outline = FrostOutline,
-    outlineVariant = Color(0xFFDCE4F2),
-    error = Color(0xFFBA1A1A),
+    outlineVariant = Color(0xFFE5E7EB),
+    error = Color(0xFFDC2626),
     onError = Color.White,
-    errorContainer = Color(0xFFFFDAD6),
-    onErrorContainer = Color(0xFF410002)
+    errorContainer = Color(0xFFFEE2E2),
+    onErrorContainer = Color(0xFF7F1D1D)
 )
 
 private val AppShapes = Shapes(
-    small = RoundedCornerShape(10.dp),
-    medium = RoundedCornerShape(16.dp),
-    large = RoundedCornerShape(22.dp),
-    extraLarge = RoundedCornerShape(28.dp)
+    small = RoundedCornerShape(8.dp),
+    medium = RoundedCornerShape(12.dp),
+    large = RoundedCornerShape(14.dp),
+    extraLarge = RoundedCornerShape(18.dp)
 )
 
 @Composable
@@ -86,7 +86,7 @@ fun SwiftTunnelTheme(
     content: @Composable () -> Unit
 ) {
     val useDark = if (followSystem) isSystemInDarkTheme() else darkTheme
-    val colorScheme = if (useDark) TacticalDarkColorScheme else CrispLightColorScheme
+    val colorScheme = if (useDark) TechnicalDarkColorScheme else CrispLightColorScheme
 
     MaterialTheme(
         colorScheme = colorScheme,

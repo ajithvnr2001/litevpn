@@ -59,6 +59,7 @@ import com.example.ui.icons.AppIcons
 import com.example.ui.screens.ConnectScreen
 import com.example.ui.screens.LocationsScreen
 import com.example.ui.screens.SplitTunnelScreen
+import com.example.ui.screens.ToolsScreen
 import com.example.ui.theme.SwiftTunnelTheme
 
 class MainActivity : ComponentActivity() {
@@ -177,7 +178,7 @@ private fun SwiftTunnelRoot(
                 out.write(json.toByteArray(Charsets.UTF_8))
             } ?: error("Could not open file output stream")
         }.onSuccess {
-            viewModel.showMessage("Config exported cleanly (API key excluded)")
+            viewModel.showMessage("Config exported (API key excluded)")
         }.onFailure { err ->
             viewModel.showMessage("Export failed: ${err.message ?: "storage unavailable"}")
         }
@@ -194,7 +195,7 @@ private fun SwiftTunnelRoot(
         }.onSuccess { rawJson ->
             viewModel.importBackupJson(rawJson)
         }.onFailure { err ->
-            viewModel.showMessage("Could not read backup file: ${err.message ?: "invalid file"}")
+            viewModel.showMessage("Import failed: ${err.message ?: "invalid file"}")
         }
     }
 
@@ -202,7 +203,7 @@ private fun SwiftTunnelRoot(
         runCatching {
             exportBackupLauncher.launch("swifttunnel-config.json")
         }.onFailure {
-            viewModel.showMessage("No file picker on this device — use Copy / Paste JSON below")
+            viewModel.showMessage("No file picker available — use Copy / Paste JSON")
         }
     }
 
@@ -210,25 +211,25 @@ private fun SwiftTunnelRoot(
         runCatching {
             importBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
         }.onFailure {
-            viewModel.showMessage("No file picker on this device — use Copy / Paste JSON below")
+            viewModel.showMessage("No file picker available — use Copy / Paste JSON")
         }
     }
 
     fun copyBackupJson(json: String) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("SwiftTunnel Config Backup", json))
-        viewModel.showMessage("Secret-free config JSON copied to clipboard")
+        viewModel.showMessage("Config JSON copied")
     }
 
     fun copyWireGuardConfig() {
         val config = viewModel.buildWireGuardConfigText()
         if (config == null) {
-            viewModel.showMessage("Select or refresh a Nord server first")
+            viewModel.showMessage("Select a Nord server first")
             return
         }
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(ClipData.newPlainText("SwiftTunnel WireGuard Config", config))
-        viewModel.showMessage("NordLynx WireGuard config copied to clipboard")
+        viewModel.showMessage("WireGuard config copied")
     }
 
     LaunchedEffect(uiState.snackbarMessage) {
@@ -318,11 +319,6 @@ private fun SwiftTunnelRoot(
                             onToggleConnection = ::handleToggleConnection,
                             onApplyReconfigure = ::requestConnectOrApply,
                             onSelectMode = viewModel::selectConnectionMode,
-                            onSelectDnsPreset = viewModel::selectDnsPreset,
-                            onSaveCustomDns = viewModel::saveCustomDns,
-                            onToggleLanBypass = viewModel::setLanBypassEnabled,
-                            onToggleAutoFailover = viewModel::setAutoFailoverEnabled,
-                            onSelectMtu = viewModel::setCustomMtu,
                             onHopLowerLoadServer = {
                                 viewModel.hopToLowerLoadServer {
                                     requestConnectOrApply()
@@ -335,25 +331,13 @@ private fun SwiftTunnelRoot(
                                 }
                             },
                             onDeleteProfile = viewModel::deleteSavedProfile,
-                            onRunLeakCheck = viewModel::runIpAndLeakCheck,
-                            onExportBackupFile = ::launchExportBackup,
-                            onImportBackupFile = ::launchImportBackup,
-                            onGetBackupJson = viewModel::exportBackupJson,
-                            onCopyBackupJson = ::copyBackupJson,
-                            onImportBackupJson = viewModel::importBackupJson,
                             onOpenLocations = { viewModel.selectTab(AppTab.LOCATIONS) },
                             onOpenSplitTunnel = { viewModel.selectTab(AppTab.SPLIT_TUNNEL) },
+                            onOpenTools = { viewModel.selectTab(AppTab.TOOLS) },
                             onRefreshServer = {
                                 viewModel.refreshRecommendedServer()
                                 viewModel.refreshNetworkTrace()
-                            },
-                            onRetryCredentials = viewModel::verifyNordCredentials,
-                            onSaveApiKey = viewModel::saveAndVerifyApiKey,
-                            onClearCustomApiKey = viewModel::clearCustomApiKey,
-                            onToggleAutoConnectOnBoot = viewModel::setAutoConnectOnBoot,
-                            onOpenBatterySettings = ::openBatteryOptimizationSettings,
-                            onOpenSystemVpnSettings = ::openSystemVpnSettings,
-                            onCopyWireGuardConfig = ::copyWireGuardConfig
+                            }
                         )
 
                         AppTab.LOCATIONS -> LocationsScreen(
@@ -385,10 +369,43 @@ private fun SwiftTunnelRoot(
                             uiState = uiState,
                             onSelectSplitMode = viewModel::setSplitTunnelMode,
                             onToggleApp = viewModel::toggleAppInSplitList,
+                            onSetAppCountryRoute = viewModel::setAppCountryRoute,
+                            onClearAppCountryRoute = viewModel::clearAppCountryRoute,
+                            onClearAllAppCountryRoutes = viewModel::clearAllAppCountryRoutes,
                             onQueryChange = viewModel::updateAppSearchQuery,
                             onToggleSelectedOnly = viewModel::toggleShowSelectedAppsOnly,
                             onClearSelected = viewModel::clearActiveSplitApps,
                             onApplyReconfigure = ::requestConnectOrApply
+                        )
+
+                        AppTab.TOOLS -> ToolsScreen(
+                            uiState = uiState,
+                            isAndroidTv = isAndroidTv,
+                            isWideLayout = isWideLayout,
+                            onApplyReconfigure = ::requestConnectOrApply,
+                            onSelectDnsPreset = viewModel::selectDnsPreset,
+                            onSaveCustomDns = viewModel::saveCustomDns,
+                            onToggleLanBypass = viewModel::setLanBypassEnabled,
+                            onToggleAutoFailover = viewModel::setAutoFailoverEnabled,
+                            onSelectMtu = viewModel::setCustomMtu,
+                            onHopLowerLoadServer = {
+                                viewModel.hopToLowerLoadServer {
+                                    requestConnectOrApply()
+                                }
+                            },
+                            onRunLeakCheck = viewModel::runIpAndLeakCheck,
+                            onExportBackupFile = ::launchExportBackup,
+                            onImportBackupFile = ::launchImportBackup,
+                            onGetBackupJson = viewModel::exportBackupJson,
+                            onCopyBackupJson = ::copyBackupJson,
+                            onImportBackupJson = viewModel::importBackupJson,
+                            onToggleAutoConnectOnBoot = viewModel::setAutoConnectOnBoot,
+                            onOpenBatterySettings = ::openBatteryOptimizationSettings,
+                            onOpenSystemVpnSettings = ::openSystemVpnSettings,
+                            onRetryCredentials = viewModel::verifyNordCredentials,
+                            onSaveApiKey = viewModel::saveAndVerifyApiKey,
+                            onClearCustomApiKey = viewModel::clearCustomApiKey,
+                            onCopyWireGuardConfig = ::copyWireGuardConfig
                         )
                     }
                 }
@@ -402,10 +419,12 @@ private fun tabLabel(tab: AppTab): String = when (tab) {
     AppTab.CONNECT -> stringResource(R.string.nav_connect)
     AppTab.LOCATIONS -> stringResource(R.string.nav_locations)
     AppTab.SPLIT_TUNNEL -> stringResource(R.string.nav_split_tunnel)
+    AppTab.TOOLS -> stringResource(R.string.nav_tools)
 }
 
 private fun tabIcon(tab: AppTab, isProtected: Boolean) = when (tab) {
     AppTab.CONNECT -> if (isProtected) AppIcons.ShieldCheck else AppIcons.Shield
     AppTab.LOCATIONS -> AppIcons.Globe
     AppTab.SPLIT_TUNNEL -> AppIcons.SplitApps
+    AppTab.TOOLS -> AppIcons.Sliders
 }

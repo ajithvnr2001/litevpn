@@ -14,6 +14,7 @@ import com.example.data.NordCountryCatalog
 import com.example.data.PreferencesRepository
 import com.example.data.SecureKeyStorage
 import com.example.data.ServerCodeMatcher
+import com.example.model.AppRouteRule
 import com.example.model.ConnectionMode
 import com.example.model.DnsPreset
 import com.example.model.InstalledAppInfo
@@ -45,7 +46,8 @@ import kotlinx.coroutines.launch
 enum class AppTab(val route: String) {
     CONNECT("connect"),
     LOCATIONS("locations"),
-    SPLIT_TUNNEL("split_tunnel")
+    SPLIT_TUNNEL("split_tunnel"),
+    TOOLS("tools")
 }
 
 data class MainUiState(
@@ -98,6 +100,7 @@ data class MainUiState(
     val splitMode: SplitTunnelMode = SplitTunnelMode.ALL_APPS,
     val excludedPackages: Set<String> = emptySet(),
     val includedPackages: Set<String> = emptySet(),
+    val appRouteRules: List<AppRouteRule> = emptyList(),
     val installedApps: List<InstalledAppInfo> = emptyList(),
     val isLoadingApps: Boolean = false,
     val appSearchQuery: String = "",
@@ -157,6 +160,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 splitMode = prefs.getSplitTunnelMode(),
                 excludedPackages = prefs.getExcludedPackages(),
                 includedPackages = prefs.getIncludedPackages(),
+                appRouteRules = prefs.getAppRouteRules(),
                 vpnSession = VpnStateHolder.sessionState.value
             )
         }
@@ -175,18 +179,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             VpnStateHolder.sessionState.collect { session ->
                 _uiState.update { state ->
-                    val (desiredPrimaryDns, _) = state.effectiveDns
                     val stillPending = state.hasPendingReconfigure &&
-                        session.status == TunnelStatus.CONNECTED &&
-                        (session.mode != state.selectedMode ||
-                            session.primaryDns != desiredPrimaryDns ||
-                            session.lanBypassEnabled != state.lanBypassEnabled ||
-                            session.mtu != state.customMtu ||
-                            session.splitMode != state.splitMode ||
-                            session.splitAppCount != state.activeSplitPackages.size ||
-                            (state.selectedMode.usesVpn &&
-                                state.recommendedServer != null &&
-                                session.activeServer?.hostname != state.recommendedServer.hostname))
+                        session.status == TunnelStatus.CONNECTED
                     state.copy(
                         vpnSession = session,
                         hasPendingReconfigure = stillPending
@@ -768,6 +762,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(showSelectedAppsOnly = !it.showSelectedAppsOnly) }
     }
 
+    fun setAppCountryRoute(
+        packageName: String,
+        country: NordCountry,
+        cityName: String? = null
+    ) {
+        val current = _uiState.value.appRouteRules.filterNot { it.packageName == packageName }
+        val newRule = AppRouteRule(
+            packageName = packageName,
+            countryId = country.id,
+            countryName = country.name,
+            countryCode = country.code,
+            cityName = cityName?.takeIf { it.isNotBlank() }
+        )
+        val updated = current + newRule
+        prefs.saveAppRouteRules(updated)
+        _uiState.update { state ->
+            state.copy(
+                appRouteRules = updated,
+                hasPendingReconfigure = state.isConnected
+            )
+        }
+        val appLabel = _uiState.value.installedApps
+            .firstOrNull { it.packageName == packageName }
+            ?.appName ?: packageName
+        showMessage("$appLabel → ${newRule.shortTargetLabel}")
+    }
+
+    fun clearAppCountryRoute(packageName: String) {
+        val updated = _uiState.value.appRouteRules.filterNot { it.packageName == packageName }
+        prefs.saveAppRouteRules(updated)
+        _uiState.update { state ->
+            state.copy(
+                appRouteRules = updated,
+                hasPendingReconfigure = state.isConnected
+            )
+        }
+        showMessage("Reset app route to default tunnel")
+    }
+
+    fun clearAllAppCountryRoutes() {
+        if (_uiState.value.appRouteRules.isEmpty()) return
+        prefs.saveAppRouteRules(emptyList())
+        _uiState.update { state ->
+            state.copy(
+                appRouteRules = emptyList(),
+                hasPendingReconfigure = state.isConnected
+            )
+        }
+        showMessage("Cleared all per-app country routes")
+    }
+
     fun selectDnsPreset(preset: DnsPreset) {
         prefs.setDnsPreset(preset)
         _uiState.update { state ->
@@ -1093,6 +1138,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 splitMode = prefs.getSplitTunnelMode(),
                 excludedPackages = prefs.getExcludedPackages(),
                 includedPackages = prefs.getIncludedPackages(),
+                appRouteRules = prefs.getAppRouteRules(),
                 autoConnectOnBoot = prefs.isAutoConnectOnBootEnabled(),
                 lanBypassEnabled = prefs.isLanBypassEnabled(),
                 autoFailoverEnabled = prefs.isAutoFailoverEnabled(),
@@ -1105,17 +1151,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             countryId = prefs.getSelectedCountryId(),
             cityName = prefs.getSelectedCityName()
         )
-        showMessage("Imported config & ${decoded.savedProfiles.size} profile(s) (API key untouched)")
+        showMessage("Imported config, ${decoded.savedProfiles.size} profile(s) & ${decoded.appRouteRules.size} app route(s)")
         return true
     }
 
     fun validateBeforeConnect(): String? {
         val state = _uiState.value
-        if (state.splitMode == SplitTunnelMode.INCLUDE_ONLY_APPS && state.includedPackages.isEmpty()) {
-            return "Select at least 1 app in Split Apps (Include Only) before connecting."
+        if (state.splitMode == SplitTunnelMode.INCLUDE_ONLY_APPS &&
+            state.includedPackages.isEmpty() &&
+            state.appRouteRules.isEmpty()
+        ) {
+            return "Select at least 1 app or set an app country route before connecting."
         }
         if (state.selectedMode.usesVpn && keyStorage.getActiveKeyInfo().key.isNullOrBlank()) {
-            return "Tap Swap API Key to add your Nord token before connecting to VPN."
+            return "Add your Nord API key in Tools before connecting."
         }
         return null
     }

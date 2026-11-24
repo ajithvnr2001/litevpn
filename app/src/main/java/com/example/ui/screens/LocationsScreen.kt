@@ -163,13 +163,13 @@ fun LocationsScreen(
             ) {
                 Column {
                     Text(
-                        text = "Nord Locations",
+                        text = "Servers",
                         style = MaterialTheme.typography.headlineSmall,
                         color = MaterialTheme.colorScheme.onBackground
                     )
-                    val syncTag = if (uiState.isLiveDirectorySynced) "Live Nord API" else "Full Catalog"
+                    val syncTag = if (uiState.isLiveDirectorySynced) "Live API" else "Catalog"
                     Text(
-                        text = "$syncTag • ${uiState.countries.size} countries • ${uiState.countries.sumOf { it.cities.size }} cities",
+                        text = "$syncTag · ${uiState.countries.size} countries · ${uiState.countries.sumOf { it.cities.size }} cities",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -196,9 +196,9 @@ fun LocationsScreen(
                     .fillMaxWidth()
                     .testTag("location_search_input"),
                 singleLine = true,
-                shape = RoundedCornerShape(16.dp),
+                shape = RoundedCornerShape(10.dp),
                 placeholder = {
-                    Text("Search country, city, or #code (e.g. 13084, #12790, Tirana)…")
+                    Text("Country, city, or #code (13084, #12790)…")
                 },
                 leadingIcon = {
                     Icon(
@@ -531,48 +531,41 @@ private fun FastestLocationBanner(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .tvFocusableClickable(shape = RoundedCornerShape(18.dp), onClick = onSelect)
+            .clip(RoundedCornerShape(12.dp))
+            .tvFocusableClickable(shape = RoundedCornerShape(12.dp), onClick = onSelect)
             .testTag("fastest_location_item"),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(12.dp),
         color = if (selected) {
-            MaterialTheme.colorScheme.primaryContainer
+            MaterialTheme.colorScheme.surfaceContainerHigh
         } else {
             MaterialTheme.colorScheme.surface
         },
         border = BorderStroke(
-            width = if (selected) 1.5.dp else 1.dp,
-            color = if (selected) ElectricCyan else MaterialTheme.colorScheme.outlineVariant
+            width = 1.dp,
+            color = if (selected) EmeraldProtected else MaterialTheme.colorScheme.outlineVariant
         )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(14.dp),
+                .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = ElectricCyan.copy(alpha = 0.16f)
-            ) {
-                Icon(
-                    imageVector = AppIcons.Bolt,
-                    contentDescription = null,
-                    tint = ElectricCyan,
-                    modifier = Modifier
-                        .padding(10.dp)
-                        .size(22.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(12.dp))
+            Icon(
+                imageVector = AppIcons.Bolt,
+                contentDescription = null,
+                tint = EmeraldProtected,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = "Fastest Available Server",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = "Fastest Available",
+                    style = MaterialTheme.typography.titleSmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
                 Text(
-                    text = "Auto-pick lowest-load NordLynx server globally",
+                    text = "Lowest-load NordLynx server",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -580,6 +573,7 @@ private fun FastestLocationBanner(
             Spacer(modifier = Modifier.width(8.dp))
             Button(
                 onClick = onConnectNow,
+                shape = RoundedCornerShape(8.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier.testTag("connect_fastest_button")
             ) {
@@ -611,17 +605,17 @@ private fun CountryLocationCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(RoundedCornerShape(12.dp))
             .testTag("country_item_${country.code.lowercase()}"),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(12.dp),
         color = if (isSelected) {
-            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.65f)
+            MaterialTheme.colorScheme.surfaceContainerHigh
         } else {
             MaterialTheme.colorScheme.surface
         },
         border = BorderStroke(
-            width = if (isSelected) 1.5.dp else 1.dp,
-            color = if (isSelected) ElectricCyan else MaterialTheme.colorScheme.outlineVariant
+            width = 1.dp,
+            color = if (isSelected) EmeraldProtected else MaterialTheme.colorScheme.outlineVariant
         )
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {

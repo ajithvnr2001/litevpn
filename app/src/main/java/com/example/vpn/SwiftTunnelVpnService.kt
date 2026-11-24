@@ -50,6 +50,7 @@ class SwiftTunnelVpnService : VpnService() {
     private var tunInterface: ParcelFileDescriptor? = null
     private var dnsForwarder: DnsPacketForwarder? = null
     private var wireGuardEngine: WireGuardTunnelEngine? = null
+    private var multiPeerEngine: MultiPeerWireGuardEngine? = null
     private var connectJob: Job? = null
     private var handoverCallback: ConnectivityManager.NetworkCallback? = null
     private var handoverReconnectJob: Job? = null
@@ -349,6 +350,17 @@ class SwiftTunnelVpnService : VpnService() {
             VpnKeyBridge.nordLynxPrivateKey = privateKey
         }
 
+        val appRules = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            prefs.getAppRouteRules().filter { it.packageName != packageName }
+        } else {
+            emptyList()
+        }
+
+        if (appRules.isNotEmpty()) {
+            establishMultiPeerWireGuardTunnel(config, server, privateKey, appRules)
+            return
+        }
+
         // 3. Perform REAL WireGuard Noise_IKpsk2 handshake BEFORE adding tunnel routes;
         //    if Auto-Failover is ON and the primary server fails to respond, seamlessly
         //    fail over to the next lowest-load server in the same city/country!
@@ -439,6 +451,141 @@ class SwiftTunnelVpnService : VpnService() {
                 isWireGuardVerified = true,
                 lanBypassEnabled = config.lanBypassEnabled,
                 mtu = config.mtu,
+                activePeerTunnels = emptyList(),
+                errorMessage = null
+            )
+        }
+    }
+
+    private suspend fun establishMultiPeerWireGuardTunnel(
+        config: ActiveTunnelConfig,
+        defaultServer: NordServer,
+        privateKey: String,
+        appRules: List<com.example.model.AppRouteRule>
+    ) {
+        val defaultCountryId = prefs.getSelectedCountryId() ?: -1
+        val specs = mutableListOf<PeerTunnelSpec>()
+        val mappedPackages = LinkedHashSet<String>()
+
+        // Default peer always handles unmapped apps
+        val defaultSpec = PeerTunnelSpec(
+            routeKey = "default",
+            countryId = defaultCountryId,
+            server = defaultServer,
+            appPackages = emptyList(),
+            appUids = emptySet(),
+            isDefaultPeer = true
+        )
+        specs.add(defaultSpec)
+
+        // Group apps sharing the exact same target country/city/pinned server onto a single WireGuard peer
+        val grouped = appRules.groupBy { it.routeKey }
+        for ((routeKey, rulesForRoute) in grouped) {
+            val first = rulesForRoute.first()
+            val uids = HashSet<Int>()
+            val validPkgs = mutableListOf<String>()
+            for (rule in rulesForRoute) {
+                val uid = runCatching { packageManager.getPackageUid(rule.packageName, 0) }.getOrNull()
+                if (uid != null && uid > 0) {
+                    uids.add(uid)
+                    validPkgs.add(rule.packageName)
+                    mappedPackages.add(rule.packageName)
+                }
+            }
+            if (uids.isEmpty()) continue
+
+            val peerServer = first.pinnedServerHostname?.let { host ->
+                apiClient.fetchServerByHostname(host).getOrNull()
+            } ?: apiClient.fetchRecommendedServer(first.countryId, first.cityName).getOrNull()
+                ?: continue
+
+            if (peerServer.wireGuardPublicKey.isBlank()) continue
+            specs.add(
+                PeerTunnelSpec(
+                    routeKey = routeKey,
+                    countryId = first.countryId,
+                    server = peerServer,
+                    appPackages = validPkgs,
+                    appUids = uids,
+                    isDefaultPeer = false
+                )
+            )
+        }
+
+        val engine = MultiPeerWireGuardEngine(
+            vpnService = this@SwiftTunnelVpnService,
+            localPrivateKeyBase64 = privateKey,
+            peerSpecs = specs,
+            scope = serviceScope,
+            onStatsFlushed = { pkts, tx, rx, summaries ->
+                VpnStateHolder.recordMultiPeerWireGuardStats(pkts, tx, rx, summaries)
+            }
+        )
+        multiPeerEngine = engine
+        val (handshakeRttMs, initialSummaries) = engine.performInitialHandshakes().getOrThrow()
+
+        val builder = Builder()
+            .setSession("SwiftTunnel Multi-App (${initialSummaries.size} tunnels)")
+            .setMtu(config.mtu)
+            .addAddress("10.5.0.2", 32)
+            .addAddress("fd00:5:0::2", 128)
+            .addRoute("::", 0)
+            .addDnsServer(config.primaryDns)
+
+        if (config.secondaryDns.isNotBlank() && config.secondaryDns != config.primaryDns) {
+            builder.addDnsServer(config.secondaryDns)
+        }
+        applyIpv4RoutesWithLanBypass(builder, config.lanBypassEnabled)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            builder.setMetered(false)
+        }
+
+        // Ensure all apps with explicit country routes enter the TUN interface cleanly
+        val effectiveSplitPackages = when (config.splitMode) {
+            SplitTunnelMode.INCLUDE_ONLY_APPS -> config.splitPackages + mappedPackages
+            SplitTunnelMode.EXCLUDE_APPS -> config.splitPackages - mappedPackages
+            SplitTunnelMode.ALL_APPS -> config.splitPackages
+        }
+        applySplitTunneling(builder, config.splitMode, effectiveSplitPackages)
+
+        val established = builder.establish()
+            ?: throw IllegalStateException("Android VPN interface could not be established")
+        tunInterface = established
+
+        engine.startDataLoops(established)
+
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.notify(
+            NOTIFICATION_ID,
+            buildNotification(
+                mode = config.mode,
+                primaryDns = config.primaryDns,
+                server = defaultServer,
+                splitMode = config.splitMode,
+                splitCount = effectiveSplitPackages.size,
+                connecting = false
+            )
+        )
+
+        VpnStateHolder.update {
+            it.copy(
+                status = TunnelStatus.CONNECTED,
+                mode = config.mode,
+                connectedAtMillis = System.currentTimeMillis(),
+                dnsQueriesForwarded = 0L,
+                dnsCacheHits = 0L,
+                bytesTx = 0L,
+                bytesRx = 0L,
+                primaryDns = config.primaryDns,
+                secondaryDns = config.secondaryDns,
+                activeServer = defaultServer,
+                splitMode = config.splitMode,
+                splitAppCount = effectiveSplitPackages.size,
+                latencyMs = handshakeRttMs,
+                isWireGuardVerified = true,
+                lanBypassEnabled = config.lanBypassEnabled,
+                mtu = config.mtu,
+                activePeerTunnels = initialSummaries,
                 errorMessage = null
             )
         }
@@ -595,6 +742,7 @@ class SwiftTunnelVpnService : VpnService() {
                 status = TunnelStatus.DISCONNECTED,
                 connectedAtMillis = 0L,
                 isWireGuardVerified = false,
+                activePeerTunnels = emptyList(),
                 errorMessage = null
             )
         }
@@ -609,6 +757,8 @@ class SwiftTunnelVpnService : VpnService() {
             connectJob = null
         }
         unregisterNetworkHandoverMonitor()
+        multiPeerEngine?.stop()
+        multiPeerEngine = null
         wireGuardEngine?.stop()
         wireGuardEngine = null
         dnsForwarder?.stop()

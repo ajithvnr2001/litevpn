@@ -1,8 +1,9 @@
 <resources>
     <string name="app_name">SwiftTunnel</string>
-    <string name="nav_connect">Connect</string>
-    <string name="nav_locations">Locations</string>
-    <string name="nav_split_tunnel">Split Apps</string>
+    <string name="nav_connect">Tunnel</string>
+    <string name="nav_locations">Servers</string>
+    <string name="nav_split_tunnel">Apps</string>
+    <string name="nav_tools">Tools</string>
     <string name="status_connected">Protected</string>
     <string name="status_connecting">Connecting…</string>
     <string name="status_disconnected">Unprotected</string>

@@ -1,6 +1,6 @@
-# SwiftTunnel System & Protocol Architecture (v6.0)
+# SwiftTunnel System & Protocol Architecture (v7.0)
 
-This document explains the internal software architecture, packet-level networking mechanics, pure-Kotlin WireGuard implementation, LAN Bypass CIDR complement routing, Auto-Failover & Network Switch Handover, Quick Settings Tile, pure-Compose throughput sparkline, secret-free JSON backup codec, Android TV adaptations, and Always-On boot auto-connect lifecycle of **SwiftTunnel v6.0**.
+This document explains the internal software architecture, packet-level networking mechanics, pure-Kotlin WireGuard implementation, **Simultaneous Per-App Multi-Location Routing (`MultiPeerWireGuardEngine` + `Ipv4PacketInspector`)**, LAN Bypass CIDR complement routing, Auto-Failover & Network Switch Handover, Quick Settings Tile, pure-Compose throughput sparkline, secret-free JSON backup codec, **No-AI-Slop Swiss Carbon 4-tab UI**, Android TV adaptations, and Always-On boot auto-connect lifecycle of **SwiftTunnel v7.0**.
 
 ---
 
@@ -9,34 +9,35 @@ This document explains the internal software architecture, packet-level networki
 SwiftTunnel follows a strict **MVVM** architecture with reactive Kotlin `StateFlow` pipelines and zero heavy DI frameworks (lightweight constructor injection):
 
 ```
-UI Composables (ConnectScreen, PowerToolsSection, ConnectionDetailsCard, LocationsScreen, SplitTunnelScreen)
+UI Composables (ConnectScreen, LocationsScreen, SplitTunnelScreen, ToolsScreen, ConnectionDetailsCard)
        │  collectAsStateWithLifecycle()
        ▼
 MainViewModel (AndroidViewModel)
        │  Combines:
-       │  ├── VpnStateHolder.sessionState     (Live service telemetry, status, active DNS/LAN/MTU)
+       │  ├── VpnStateHolder.sessionState     (Live service telemetry, status, active DNS/LAN/MTU, activePeerTunnels)
        │  ├── SecureKeyStorage                (Encrypted Nord API key status)
-       │  ├── PreferencesRepository           (Mode, DNS Preset, Saved Profiles, LAN/MTU/Failover, Split, Boot)
-       │  ├── ConfigBackupCodec               (Pure-Kotlin secret-free JSON import/export)
+       │  ├── PreferencesRepository           (Mode, DNS, Profiles, AppRouteRules, LAN/MTU/Failover, Split, Boot)
+       │  ├── ConfigBackupCodec               (Pure-Kotlin secret-free JSON import/export incl. appRouteRules)
        │  ├── NordApiClient                   (Live countries, recommendations, server stream, hostname lookup, trace)
        │  └── InstalledAppsRepository         (Mobile + Android TV launchable apps)
        ▼
 SwiftTunnelVpnService (Android VpnService + specialUse Foreground Service)
        ├── LanBypassRouteCalculator           (API 33+ excludeRoute / API 24-32 IPv4 CIDR complement routes)
        ├── ConnectivityManager.NetworkCallback(Wi-Fi <-> 5G/LTE Handover + Boot network wait)
-       ├── WireGuardTunnelEngine              (VPN Modes: Custom MTU TUN <-> UDP:51820 WireGuard + Auto-Failover)
+       ├── MultiPeerWireGuardEngine           (Android 10+ concurrent App -> Country NordLynx peers)
+       ├── WireGuardTunnelEngine              (Single-peer Custom MTU TUN <-> UDP:51820 WireGuard + Auto-Failover)
        └── DnsPacketForwarder                 (DNS-Only Modes: UDP:53 <-> Active DNS Preset)
 ```
 
 ### Core State Singletons
 - **`VpnStateHolder`**: Thread-safe `MutableStateFlow<VpnSessionState>` bridging `SwiftTunnelVpnService`, `SwiftTunnelTileService`, and `MainViewModel` without requiring AIDL or bound-service overhead.
-- **`VpnKeyBridge`**: Process-local, in-memory holder (`@Volatile`) used to hand the NordLynx WireGuard private key directly from `MainViewModel` / `SwiftTunnelVpnService` into `WireGuardTunnelEngine` without ever serializing sensitive keys into Android `Intent` extras or persistent storage.
+- **`VpnKeyBridge`**: Process-local, in-memory holder (`@Volatile`) used to hand the NordLynx WireGuard private key directly from `MainViewModel` / `SwiftTunnelVpnService` into `WireGuardTunnelEngine` / `MultiPeerWireGuardEngine` without ever serializing sensitive keys into Android `Intent` extras or persistent storage.
 
 ---
 
 ## 2. Pure-Kotlin WireGuard (NordLynx) Engine
 
-To guarantee an APK strictly **under 5 MB** (**3.6 MB** in v6.0) across all CPU architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`) without bundling ~15–25 MB of Go/C native `libwg-go.so` binaries, SwiftTunnel implements the WireGuard protocol directly in pure Kotlin.
+To guarantee an APK strictly **under 5 MB** (**3.7 MB** in v7.0) across all CPU architectures (`arm64-v8a`, `armeabi-v7a`, `x86_64`) without bundling ~15–25 MB of Go/C native `libwg-go.so` binaries, SwiftTunnel implements the WireGuard protocol directly in pure Kotlin.
 
 ### 2.1 Cryptographic Primitives (`vpn/crypto/WireGuardCrypto.kt`)
 
@@ -154,13 +155,34 @@ When using **Cloudflare Only** or **Google Only** (with any DNS preset):
 
 ---
 
-## 7. Split Tunneling Mechanics
+## 7. Split Tunneling & Simultaneous Per-App Multi-Location Routing (v7.0)
 
+### 7.1 Base Split Tunneling (`VpnService.Builder`)
 | SplitTunnelMode | `VpnService.Builder` Calls | Resulting Behavior |
 | :--- | :--- | :--- |
 | `ALL_APPS` | `addDisallowedApplication(context.packageName)` | Every app uses the tunnel; SwiftTunnel itself bypasses the tunnel to prevent control-plane loops. |
-| `EXCLUDE_APPS` | `addDisallowedApplication(context.packageName)` + `addDisallowedApplication(pkg)` | All apps use the VPN **except** user-selected excluded apps. |
-| `INCLUDE_ONLY_APPS` | `addAllowedApplication(pkg)` (excluding `context.packageName`) | **Only** selected apps route through WireGuard (or DNS-only tunnel). All other apps stay on the direct ISP connection. |
+| `EXCLUDE_APPS` | `addDisallowedApplication(context.packageName)` + `addDisallowedApplication(pkg)` | All apps use the VPN **except** user-selected excluded apps (any app with an explicit `AppRouteRule` is automatically kept inside TUN). |
+| `INCLUDE_ONLY_APPS` | `addAllowedApplication(pkg)` (including any app with an `AppRouteRule`, excluding `context.packageName`) | **Only** selected/routed apps enter the TUN interface. All other apps stay on the direct ISP connection. |
+
+### 7.2 Simultaneous Per-App Multi-Location Tunnels (`Ipv4PacketInspector` + `MultiPeerWireGuardEngine`)
+Android permits only one active `VpnService` TUN interface per device. SwiftTunnel v7.0 routes multiple apps to distinct NordVPN countries simultaneously on **Android 10+ (API 29+)** without root:
+
+```
+App A (Brave, UID 10101)  ──┐                          ┌─► Peer 1: India   (UDP:51820, protected socket)
+App B (Netflix, UID 10202)──┼─► Single TUN (10.5.0.2) ─┼─► Peer 2: US      (UDP:51820, protected socket)
+All Other Apps            ──┘        │                 └─► Default Peer: Albania (UDP:51820, protected socket)
+                                     ▼
+                       1. Ipv4PacketInspector.extractFlowTuple()
+                       2. AppPeerRouteTable flow cache (2,048 entries)
+                       3. On cache miss (packet #1 of TCP/UDP stream):
+                          ConnectivityManager.getConnectionOwnerUid(proto, local, remote)
+                       4. Encrypt via owning peer's WireGuardSession -> send over peer UDP socket
+                       5. Each peer RX coroutine decrypts replies & writes to shared TUN under tunWriteLock
+```
+
+- **Zero Socket Conflict**: Even though every NordLynx peer assigns client IP `10.5.0.2/32`, Android's kernel assigns distinct ephemeral source ports to every socket across apps, so decrypted reply packets from India, US, and Albania multiplex back into the single TUN fd cleanly.
+- **Peer Deduplication**: Multiple apps assigned to the same target country/city share a single WireGuard peer session (`AppRouteRule.routeKey`) to conserve sockets and battery.
+- **Batched Multi-Peer Telemetry**: `VpnStateHolder.recordMultiPeerWireGuardStats()` publishes per-peer `ActivePeerTunnelSummary` snapshots (flag, `#code`, city/country, app count, TX/RX bytes) every 500 ms for the UI.
 
 ---
 
@@ -185,17 +207,20 @@ When using **Cloudflare Only** or **Google Only** (with any DNS preset):
 
 ### 9.2 Pure-Kotlin JSON Backup Codec (`data/ConfigBackupCodec.kt`)
 - Zero-dependency RFC 8259 JSON encoder + recursive-descent `MiniJsonParser` that runs identically on Android and pure JVM JUnit tests without Android framework stubs.
-- Encodes and decodes `AppConfigBackup` (routing mode, DNS preset, custom IPv4 DNS, selected country/city, pinned hostname, favorites, split-tunnel mode + excluded/included packages, boot auto-connect, LAN bypass, auto-failover, custom MTU, and up to 12 `SavedVpnProfile` entries).
+- Encodes and decodes `AppConfigBackup` (routing mode, DNS preset, custom IPv4 DNS, selected country/city, pinned hostname, favorites, split-tunnel mode + excluded/included packages, boot auto-connect, LAN bypass, auto-failover, custom MTU, **per-app `appRouteRules`**, and up to 12 `SavedVpnProfile` entries). Reference schema: [`import/export_eg.json`](../import/export_eg.json).
 - Clamps imported MTU strictly to `[1280, 1420]`, sanitizes invalid IPv4 strings, and enforces `"secretsExcluded": true`.
 
 ---
 
-## 10. Android TV & Always-On Boot Auto-Connect Lifecycle
+## 10. No-AI-Slop Swiss Carbon UI, Android TV & Always-On Boot Lifecycle
 
-### Android TV Command Center
-- `MainActivity` detects `UiModeManager.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION`, switches to an overscan-safe side `NavigationRail`, and `ConnectScreen` activates a **2-Column Command Center** (`isAndroidTv || maxWidth >= 840.dp`).
-- `Modifier.tvFocusableClickable(...)` draws glowing `2.dp` Electric Cyan focus rings with spring scale and hardware `DPAD_CENTER` / `ENTER` support across every interactive card, chip, profile, and toggle.
-- `InstalledAppsRepository` merges `CATEGORY_LAUNCHER` + `CATEGORY_LEANBACK_LAUNCHER` so TV-only apps appear in Split Tunneling without `QUERY_ALL_PACKAGES`.
+### Swiss Carbon 4-Tab Design (`ui/theme/Color.kt`, `ConnectScreen`, `ToolsScreen`)
+- Replaces glowing neon orbs and 12-card vertical stacks with a calm matte neutral dark palette (`#0B0C0E` background, `#131518` surfaces, `1.dp` `#242830` hairlines), disciplined functional signal accents (`#22C55E` active/verified, `#38BDF8` `#code` & TV focus rings, `#F59E0B` warnings, `#EF4444` errors), and 4 focused destinations: **Tunnel**, **Servers**, **Apps**, **Tools**.
+
+### Android TV Layout
+- `MainActivity` detects `UiModeManager.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION`, switches to an overscan-safe left `NavigationRail`, and both `ConnectScreen` and `ToolsScreen` activate a balanced **2-Column Layout** (`isAndroidTv || maxWidth >= 840.dp`).
+- `Modifier.tvFocusableClickable(...)` draws crisp `2.dp` focus rings with subtle scale and hardware `DPAD_CENTER` / `ENTER` support across every interactive row, chip, dialog item, and toggle.
+- `InstalledAppsRepository` merges `CATEGORY_LAUNCHER` + `CATEGORY_LEANBACK_LAUNCHER` so TV-only apps appear in Apps / Per-App Country Routing without `QUERY_ALL_PACKAGES`.
 
 ### Boot Auto-Connect Sequence
 ```

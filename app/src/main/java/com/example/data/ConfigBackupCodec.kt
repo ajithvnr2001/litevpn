@@ -1,5 +1,6 @@
 package com.example.data
 
+import com.example.model.AppRouteRule
 import com.example.model.ConnectionMode
 import com.example.model.DnsPreset
 import com.example.model.SavedVpnProfile
@@ -23,6 +24,7 @@ data class AppConfigBackup(
     val lanBypassEnabled: Boolean = false,
     val autoFailoverEnabled: Boolean = true,
     val customMtu: Int = 1280,
+    val appRouteRules: List<AppRouteRule> = emptyList(),
     val savedProfiles: List<SavedVpnProfile> = emptyList()
 )
 
@@ -57,6 +59,21 @@ object ConfigBackupCodec {
         sb.append("  \"lanBypassEnabled\": ").append(backup.lanBypassEnabled).append(",\n")
         sb.append("  \"autoFailoverEnabled\": ").append(backup.autoFailoverEnabled).append(",\n")
         sb.append("  \"customMtu\": ").append(backup.customMtu.coerceIn(MIN_MTU, MAX_MTU)).append(",\n")
+        sb.append("  \"appRouteRules\": [\n")
+        backup.appRouteRules.forEachIndexed { idx, r ->
+            sb.append("    {\n")
+            sb.append("      \"packageName\": ").append(quote(r.packageName)).append(",\n")
+            sb.append("      \"countryId\": ").append(r.countryId).append(",\n")
+            sb.append("      \"countryName\": ").append(quote(r.countryName)).append(",\n")
+            sb.append("      \"countryCode\": ").append(quote(r.countryCode)).append(",\n")
+            sb.append("      \"cityName\": ").append(quote(r.cityName.orEmpty())).append(",\n")
+            sb.append("      \"pinnedServerHostname\": ").append(quote(r.pinnedServerHostname.orEmpty())).append(",\n")
+            sb.append("      \"pinnedServerCode\": ").append(quote(r.pinnedServerCode.orEmpty())).append("\n")
+            sb.append("    }")
+            if (idx < backup.appRouteRules.lastIndex) sb.append(',')
+            sb.append('\n')
+        }
+        sb.append("  ],\n")
         sb.append("  \"savedProfiles\": [\n")
         backup.savedProfiles.forEachIndexed { idx, p ->
             sb.append("    {\n")
@@ -152,6 +169,27 @@ object ConfigBackupCodec {
             }
             ?: emptyList()
 
+        val appRules = (root["appRouteRules"] as? List<*>)
+            ?.mapNotNull { item ->
+                val map = item as? Map<*, *> ?: return@mapNotNull null
+                val pkg = (map["packageName"] as? String)?.trim()?.ifBlank { null } ?: return@mapNotNull null
+                val cid = (map["countryId"] as? Number)?.toInt() ?: return@mapNotNull null
+                if (cid <= 0) return@mapNotNull null
+                val cname = (map["countryName"] as? String)?.trim().orEmpty()
+                val ccode = (map["countryCode"] as? String)?.trim()?.uppercase().orEmpty()
+                AppRouteRule(
+                    packageName = pkg,
+                    countryId = cid,
+                    countryName = cname.ifBlank { ccode },
+                    countryCode = ccode,
+                    cityName = (map["cityName"] as? String)?.trim()?.ifBlank { null },
+                    pinnedServerHostname = (map["pinnedServerHostname"] as? String)?.trim()?.ifBlank { null },
+                    pinnedServerCode = (map["pinnedServerCode"] as? String)?.trim()?.ifBlank { null }
+                )
+            }
+            ?.distinctBy { it.packageName }
+            ?: emptyList()
+
         AppConfigBackup(
             schemaVersion = (root["schemaVersion"] as? Number)?.toInt() ?: 1,
             connectionModeId = mode.id,
@@ -169,6 +207,7 @@ object ConfigBackupCodec {
             lanBypassEnabled = lanBypass,
             autoFailoverEnabled = autoFailover,
             customMtu = mtu,
+            appRouteRules = appRules,
             savedProfiles = profiles
         )
     }
