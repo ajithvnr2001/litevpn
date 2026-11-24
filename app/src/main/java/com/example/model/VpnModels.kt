@@ -189,6 +189,114 @@ data class InstalledAppInfo(
     val icon: Bitmap?
 )
 
+enum class DnsPreset(
+    val id: String,
+    val title: String,
+    val shortLabel: String,
+    val primaryIp: String,
+    val secondaryIp: String,
+    val description: String
+) {
+    MODE_DEFAULT(
+        id = "mode_default",
+        title = "Mode Default DNS",
+        shortLabel = "Mode DNS",
+        primaryIp = "",
+        secondaryIp = "",
+        description = "Uses 1.1.1.1, 8.8.8.8, or Nord DNS from your selected routing mode."
+    ),
+    ADGUARD_ADS(
+        id = "adguard",
+        title = "AdGuard Ad-Block",
+        shortLabel = "AdGuard",
+        primaryIp = "94.140.14.14",
+        secondaryIp = "94.140.15.15",
+        description = "Blocks ads, trackers, and telemetry across apps & Android TV."
+    ),
+    QUAD9_SECURITY(
+        id = "quad9",
+        title = "Quad9 Security",
+        shortLabel = "Quad9",
+        primaryIp = "9.9.9.9",
+        secondaryIp = "149.112.112.112",
+        description = "Malware & phishing domain blocking with DNSSEC."
+    ),
+    CUSTOM(
+        id = "custom",
+        title = "Custom IPv4 DNS",
+        shortLabel = "Custom DNS",
+        primaryIp = "1.1.1.1",
+        secondaryIp = "1.0.0.1",
+        description = "Use your own primary and secondary IPv4 resolvers (e.g. NextDNS)."
+    );
+
+    companion object {
+        fun fromId(id: String?): DnsPreset =
+            entries.firstOrNull { it.id == id } ?: MODE_DEFAULT
+    }
+}
+
+fun isValidIpv4Address(input: String): Boolean {
+    val trimmed = input.trim()
+    if (trimmed.isEmpty()) return false
+    val parts = trimmed.split('.')
+    if (parts.size != 4) return false
+    return parts.all { part ->
+        if (part.isEmpty() || part.length > 3 || !part.all { it.isDigit() }) return false
+        if (part.length > 1 && part.startsWith('0')) return false
+        val num = part.toIntOrNull() ?: return false
+        num in 0..255
+    }
+}
+
+fun resolveEffectiveDns(
+    mode: ConnectionMode,
+    preset: DnsPreset,
+    customPrimary: String,
+    customSecondary: String
+): Pair<String, String> {
+    return when (preset) {
+        DnsPreset.MODE_DEFAULT -> mode.primaryDns to mode.secondaryDns
+        DnsPreset.ADGUARD_ADS -> preset.primaryIp to preset.secondaryIp
+        DnsPreset.QUAD9_SECURITY -> preset.primaryIp to preset.secondaryIp
+        DnsPreset.CUSTOM -> {
+            val primary = customPrimary.trim().takeIf { isValidIpv4Address(it) } ?: mode.primaryDns
+            val secondary = customSecondary.trim().takeIf { isValidIpv4Address(it) } ?: primary
+            primary to secondary
+        }
+    }
+}
+
+data class SavedVpnProfile(
+    val id: String,
+    val name: String,
+    val modeId: String,
+    val dnsPresetId: String = DnsPreset.MODE_DEFAULT.id,
+    val customDnsPrimary: String = "",
+    val customDnsSecondary: String = "",
+    val countryId: Int? = null,
+    val cityName: String? = null,
+    val pinnedServerHostname: String? = null,
+    val pinnedServerCode: String? = null,
+    val splitModeId: String = SplitTunnelMode.ALL_APPS.id,
+    val splitPackages: Set<String> = emptySet(),
+    val lanBypassEnabled: Boolean = false,
+    val mtu: Int = 1280
+)
+
+data class LeakCheckResult(
+    val exitIp: String,
+    val countryCode: String,
+    val colo: String,
+    val tlsVersion: String,
+    val ipv6LeakBlocked: Boolean,
+    val expectedServerIp: String?,
+    val ipMatchesNordServer: Boolean,
+    val activeDnsSummary: String,
+    val checkedAtMillis: Long,
+    val errorMessage: String? = null
+)
+
 data class VpnSessionState(
     val status: TunnelStatus = TunnelStatus.DISCONNECTED,
     val mode: ConnectionMode = ConnectionMode.CLOUDFLARE_PLUS_VPN,
@@ -204,6 +312,8 @@ data class VpnSessionState(
     val splitAppCount: Int = 0,
     val latencyMs: Int? = null,
     val isWireGuardVerified: Boolean = false,
+    val lanBypassEnabled: Boolean = false,
+    val mtu: Int = 1280,
     val errorMessage: String? = null
 )
 

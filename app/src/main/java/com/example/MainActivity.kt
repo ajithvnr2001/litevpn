@@ -167,6 +167,59 @@ private fun SwiftTunnelRoot(
         }
     }
 
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            val json = viewModel.exportBackupJson()
+            context.contentResolver.openOutputStream(uri)?.use { out ->
+                out.write(json.toByteArray(Charsets.UTF_8))
+            } ?: error("Could not open file output stream")
+        }.onSuccess {
+            viewModel.showMessage("Config exported cleanly (API key excluded)")
+        }.onFailure { err ->
+            viewModel.showMessage("Export failed: ${err.message ?: "storage unavailable"}")
+        }
+    }
+
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                input.bufferedReader(Charsets.UTF_8).readText()
+            } ?: error("Could not open selected file")
+        }.onSuccess { rawJson ->
+            viewModel.importBackupJson(rawJson)
+        }.onFailure { err ->
+            viewModel.showMessage("Could not read backup file: ${err.message ?: "invalid file"}")
+        }
+    }
+
+    fun launchExportBackup() {
+        runCatching {
+            exportBackupLauncher.launch("swifttunnel-config.json")
+        }.onFailure {
+            viewModel.showMessage("No file picker on this device — use Copy / Paste JSON below")
+        }
+    }
+
+    fun launchImportBackup() {
+        runCatching {
+            importBackupLauncher.launch(arrayOf("application/json", "text/plain", "*/*"))
+        }.onFailure {
+            viewModel.showMessage("No file picker on this device — use Copy / Paste JSON below")
+        }
+    }
+
+    fun copyBackupJson(json: String) {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        clipboard.setPrimaryClip(ClipData.newPlainText("SwiftTunnel Config Backup", json))
+        viewModel.showMessage("Secret-free config JSON copied to clipboard")
+    }
+
     fun copyWireGuardConfig() {
         val config = viewModel.buildWireGuardConfigText()
         if (config == null) {
@@ -195,6 +248,7 @@ private fun SwiftTunnelRoot(
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val useRail = isAndroidTv || maxWidth >= 600.dp
+        val isWideLayout = maxWidth >= 840.dp
 
         Scaffold(
             modifier = Modifier.fillMaxSize(),
@@ -259,9 +313,34 @@ private fun SwiftTunnelRoot(
                     when (uiState.selectedTab) {
                         AppTab.CONNECT -> ConnectScreen(
                             uiState = uiState,
+                            isAndroidTv = isAndroidTv,
+                            isWideLayout = isWideLayout,
                             onToggleConnection = ::handleToggleConnection,
                             onApplyReconfigure = ::requestConnectOrApply,
                             onSelectMode = viewModel::selectConnectionMode,
+                            onSelectDnsPreset = viewModel::selectDnsPreset,
+                            onSaveCustomDns = viewModel::saveCustomDns,
+                            onToggleLanBypass = viewModel::setLanBypassEnabled,
+                            onToggleAutoFailover = viewModel::setAutoFailoverEnabled,
+                            onSelectMtu = viewModel::setCustomMtu,
+                            onHopLowerLoadServer = {
+                                viewModel.hopToLowerLoadServer {
+                                    requestConnectOrApply()
+                                }
+                            },
+                            onSaveProfile = viewModel::saveCurrentAsProfile,
+                            onApplyProfile = { profile ->
+                                viewModel.applySavedProfile(profile) {
+                                    requestConnectOrApply()
+                                }
+                            },
+                            onDeleteProfile = viewModel::deleteSavedProfile,
+                            onRunLeakCheck = viewModel::runIpAndLeakCheck,
+                            onExportBackupFile = ::launchExportBackup,
+                            onImportBackupFile = ::launchImportBackup,
+                            onGetBackupJson = viewModel::exportBackupJson,
+                            onCopyBackupJson = ::copyBackupJson,
+                            onImportBackupJson = viewModel::importBackupJson,
                             onOpenLocations = { viewModel.selectTab(AppTab.LOCATIONS) },
                             onOpenSplitTunnel = { viewModel.selectTab(AppTab.SPLIT_TUNNEL) },
                             onRefreshServer = {

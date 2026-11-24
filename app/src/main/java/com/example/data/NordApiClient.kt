@@ -180,6 +180,16 @@ class NordApiClient {
         }
     }
 
+    suspend fun fetchServerByHostname(hostname: String): Result<NordServer> = withContext(Dispatchers.IO) {
+        runCatching {
+            val target = hostname.trim()
+            require(target.isNotEmpty()) { "Empty server hostname" }
+            val catalog = getOrFetchWireGuardCatalog(forceRefresh = false)
+            catalog.firstOrNull { it.hostname.equals(target, ignoreCase = true) }
+                ?: throw IllegalStateException("Pinned server $target is currently unavailable")
+        }
+    }
+
     private suspend fun getOrFetchWireGuardCatalog(forceRefresh: Boolean): List<NordServer> {
         val now = System.currentTimeMillis()
         if (!forceRefresh && cachedWireGuardCatalog.isNotEmpty() &&

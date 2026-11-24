@@ -1,14 +1,14 @@
-# SwiftTunnel End-to-End User Guide (Phone, Tablet & Android TV)
+# SwiftTunnel End-to-End User Guide (Phone, Tablet & Android TV — v6.0)
 
-This guide walks through installing **SwiftTunnel (`vpnv4.apk`)**, swapping NordVPN API keys, choosing DNS + VPN combinations, searching and connecting by country, city, or server `#code` (e.g. `13084`, `#12790`), configuring Split Tunneling, and setting up Always-On power-up protection on both mobile devices and Android TV.
+This guide walks through installing **SwiftTunnel v6.0 (`vpnv6.apk`, 3.6 MB)**, swapping NordVPN API keys, choosing routing modes + **AdGuard / Quad9 / Custom IPv4 DNS**, creating **1-Tap Saved Profiles**, enabling **LAN Bypass**, **Auto-Failover & Wi-Fi/5G Handover**, tuning **MTU** & **1-Tap Lower-Load Server Hop**, adding the **Android Quick Settings Tile**, running the **Built-In IP & Leak Check**, reading the **Live Sparkline & Connection Details**, searching servers by **`#code`**, configuring **Split Tunneling**, setting up **Always-On Power-Up**, and **Exporting/Importing Config JSON** between Phone and Android TV.
 
 ---
 
 ## 1. Installation
 
 ### On Android Phone or Tablet
-1. Copy `vpnv4.apk` to your device (or download from your repository release).
-2. Tap `vpnv4.apk` and allow **Install unknown apps** if prompted.
+1. Copy `vpnv6.apk` to your device (or download from your repository release).
+2. Tap `vpnv6.apk` and allow **Install unknown apps** if prompted.
 3. Launch **SwiftTunnel** from your home screen.
 
 ### On Android TV / Google TV
@@ -18,11 +18,11 @@ This guide walks through installing **SwiftTunnel (`vpnv4.apk`)**, swapping Nord
 3. From your computer:
    ```bash
    adb connect <YOUR_TV_IP>:5555
-   adb install -r vpnv4.apk
+   adb install -r vpnv6.apk
    ```
 
 **Option B — Via TV Downloader / USB Drive:**
-1. Copy `vpnv4.apk` onto a USB drive (or host it on your LAN/GitHub Release).
+1. Copy `vpnv6.apk` onto a USB drive (or host it on your LAN/GitHub Release).
 2. Install using a file manager or Downloader app on your Android TV.
 3. Open **SwiftTunnel** from the Android TV **Apps** row (look for the SwiftTunnel dark navy TV banner).
 
@@ -30,129 +30,159 @@ This guide walks through installing **SwiftTunnel (`vpnv4.apk`)**, swapping Nord
 
 ## 2. Setting Up or Swapping Your NordVPN API Key
 
-> **Note**: If you only want **Cloudflare 1.1.1.1 Only** or **Google 8.8.8.8 Only** DNS routing, you can skip this step completely.
+> **Note**: If you only want **Cloudflare 1.1.1.1 Only**, **Google 8.8.8.8 Only**, or **AdGuard / Quad9 / Custom DNS-Only** routing, you can skip this step completely.
 
 1. Log into your **Nord Account** on a web browser → **NordVPN** → **Set up NordVPN manually** → **Generate new token** (choose non-expiring for Always-On TV usage).
-2. Open SwiftTunnel → **Connect** tab → **NordVPN API Key** card.
-3. Tap **Swap Key** (or **Add Key**), paste your NordVPN access token, and tap **Save & Verify**.
+2. Open SwiftTunnel → **Connect** tab → **NordVPN Credentials** card.
+3. Tap **Swap API Key** (or **Add Key**), paste your NordVPN access token, and tap **Save & Verify**.
 4. SwiftTunnel encrypts the key in **Android Keystore (AES-256-GCM)** and verifies it live against `api.nordvpn.com/v1/users/services/credentials`.
-5. Once verified, you will see a green **NordLynx Ready** badge and a masked preview of your key.
-
-### Swapping to a Different Key Anytime
-- Tap **Swap Key** at any time to replace the stored token with a new NordVPN key, or tap **Clear** to wipe the stored key from Android Keystore.
+5. Tap **Swap API Key** anytime to rotate to a different NordVPN account key, or **Clear** to remove it.
 
 ---
 
-## 3. Choosing Your Routing Combination
+## 3. Routing Combinations & DNS Ad-Blocking / Custom IPv4 Presets
 
+### Step A — Choose Your Base Routing Combination
 In the **Connect** tab, select one of the 5 routing cards:
+1. **Cloudflare + VPN (`1.1.1.1` + NordLynx)** *(Recommended)*: Full encrypted WireGuard tunnel + Cloudflare DNS.
+2. **Google + VPN (`8.8.8.8` + NordLynx)**: Full encrypted WireGuard tunnel + Google DNS.
+3. **NordVPN Default**: Full encrypted WireGuard tunnel + NordVPN native resolvers (`103.86.96.100`).
+4. **Cloudflare 1.1.1.1 Only**: Direct low-latency DNS tunnel without changing your ISP IP.
+5. **Google 8.8.8.8 Only**: Direct Google DNS tunnel without changing your ISP IP.
 
-1. **Cloudflare + VPN (`1.1.1.1` + NordLynx)** *(Recommended)*: Full encrypted WireGuard tunnel to your chosen NordVPN location + Cloudflare DNS.
-2. **Google + VPN (`8.8.8.8` + NordLynx)**: Full encrypted WireGuard tunnel to your chosen NordVPN location + Google DNS.
-3. **NordVPN Default**: Full encrypted WireGuard tunnel using NordVPN's native resolvers (`103.86.96.100`).
-4. **Cloudflare 1.1.1.1 Only**: Fast Cloudflare DNS resolution without VPN routing (keeps your local ISP IP).
-5. **Google 8.8.8.8 Only**: Google DNS resolution without VPN routing (keeps your local ISP IP).
+### Step B — Optional DNS Filter & Ad-Blocking Override (v6)
+In the **DNS Filter & Ad-Blocking** card right below Routing Combinations:
+- **Mode Default**: Uses the active mode's built-in DNS (`1.1.1.1`, `8.8.8.8`, or Nord DNS).
+- **AdGuard (`94.140.14.14` / `94.140.15.15`)**: Blocks ads, trackers, and telemetry across apps & Android TV — works both **inside WireGuard VPN** and in **DNS-Only mode**.
+- **Quad9 (`9.9.9.9` / `149.112.112.112`)**: Blocks malicious, phishing, and spyware domains with DNSSEC.
+- **Custom IPv4**: Tap to enter your own validated primary and optional secondary IPv4 DNS resolvers (e.g., NextDNS, ControlD, or local Pi-hole).
 
-> **Tip**: Switching routing modes while connected? Disconnect and tap the Power Orb again (or tap **Connect** on any location) to immediately apply the new route table.
+> **Tip**: If you change DNS presets, LAN bypass, MTU, or split-tunnel apps while already connected, a blue **"Routing updated. Re-apply to live tunnel?"** banner appears at the top — tap **Apply** to reconfigure the live tunnel immediately.
 
 ---
 
-## 4. Location-Based & Server Code Search + Direct Connect
+## 4. 1-Tap Saved Profiles (v6)
 
-Open the **Locations** tab to browse all **118+ NordVPN countries**, cities, and live WireGuard servers:
+Save your favorite setups and switch between them in a single tap (or Android TV OK press):
+1. Configure your desired **Routing Mode**, **DNS Preset**, **Nord Country/City/Server `#code`**, **Split Tunnel Apps**, **LAN Bypass**, and **MTU**.
+2. In the **1-Tap Saved Profiles** card, tap **+ Save Current**.
+3. Give it a memorable name (e.g., `"TV US Streaming + AdGuard"`, `"Brave Albania Only"`, `"Low-Ping Gaming MTU 1420"`) and tap **Save Profile**.
+4. Tap any saved profile card anytime to automatically restore every setting, resolve its pinned server `#code`, and connect immediately. Tap the trash icon to remove an old profile.
 
-### A. Search by NordVPN Server Number or `#Code` (Shows Exact City & Country)
-Type any NordVPN server number or code into the search bar — SwiftTunnel searches the live NordLynx fleet and immediately displays the resolved **City & Country**, hostname, IP, and load `%`:
+---
+
+## 5. Network Tuning: LAN Bypass, Auto-Failover, Custom MTU & 1-Tap Server Hop (v6)
+
+Find all 4 controls in the **Network Tuning & Resilience** card:
+
+- **LAN / Local Network Bypass**:
+  - Toggle **ON** at home to keep **Chromecast**, **Plex / Jellyfin**, **SMB / NAS shares**, local printers, and **ADB over Wi-Fi** reachable while 100% of internet traffic stays encrypted inside WireGuard.
+  - Works on **every Android version (7 through 16)** — uses native `excludeRoute` on Android 13+ and an exact IPv4 CIDR complement table on Android 7–12.
+  - Toggle **OFF** on untrusted public Wi-Fi for strict tunnel isolation.
+- **Auto-Failover & Wi-Fi/5G Handover** *(ON by default)*:
+  - Automatically re-handshakes WireGuard when your phone moves between **Wi-Fi and 5G/LTE** (or when Ethernet reconnects on Android TV).
+  - If a pinned NordVPN server times out or goes offline for maintenance, automatically falls back to the lowest-load live WireGuard server in the same city/country.
+- **Custom WireGuard MTU (`1280` / `1360` / `1400` / `1420`)**:
+  - **`1280`** *(Default)*: Most reliable on 4G/5G cellular, carrier CGNAT, and PPPoE DSL links.
+  - **`1360` / `1400`**: Balanced overhead reduction for mixed networks.
+  - **`1420`**: Maximum throughput on clean gigabit Wi-Fi and wired Android TV Ethernet.
+- **1-Tap Lower-Load Server Hop**:
+  - Tap **Hop to Lower-Load Server in Same Region** anytime your current server slows down. SwiftTunnel fetches live servers in your selected city/country, picks the least-loaded alternate server, pins it, and reconnects automatically.
+
+---
+
+## 6. Android Quick Settings Tile (v6 — Phones & Tablets)
+
+Connect or disconnect SwiftTunnel without opening the app:
+1. Swipe down twice from the top of your Android phone/tablet to open the full Quick Settings panel.
+2. Tap the **Edit (pencil)** button.
+3. Drag the **SwiftTunnel** tile into your active Quick Settings area.
+4. Tap the tile anytime to toggle your VPN on/off — the tile subtitle displays your active server **`#code` and city** (e.g., `#13084 • Los Angeles`).
+
+---
+
+## 7. Built-In IP & Leak Verification Test (v6)
+
+Verify that your VPN and IPv6 leak block are working without opening a browser:
+1. Open the **Connect** tab (left column on Android TV) and find **Built-In IP & Leak Verification**.
+2. Tap **Run Test**.
+3. SwiftTunnel queries `https://1.1.1.1/cdn-cgi/trace` and reports:
+   - **Exit IP**, **Country Code**, and **Edge Colo** (e.g., `198.51.100.12 • US • LAX`).
+   - **Nord Server Match**: Green checkmark when your observed Exit IP matches your active NordVPN station IP.
+   - **IPv6 Leak Status**: Confirms **`IPv6 Leak: BLOCKED`**.
+   - **Active DNS**: Confirms your active resolvers (e.g., `94.140.14.14 / 94.140.15.15`).
+
+---
+
+## 8. Live Connection Details, Location `#Code` & 30-Second Sparkline Graph
+
+Both Android mobile and Android TV display the **Connection Details & Stats** card on the **Connect** screen (permanently visible in the left column of the Android TV **2-Column Command Center**):
+- **Location Code & Endpoint Banner**: Country flag, Electric Cyan **`#code` badge** (`#13084`), resolved **`City, Country`**, ISO badge (`US`), hostname (`us13084.nordvpn.com`), and endpoint (`IP:51820` or `DNS:53`). Tap or press **OK** to switch locations.
+- **2x2 Live Telemetry Grid**: Real-time **↓ Download** & **↑ Upload** speeds + cumulative totals, **Latency (`ms`)** + **Server Load `%`** (or DNS Cache Hits), and **WG Packets / DNS Queries** + total session traffic.
+- **Live 30-Second Throughput Sparkline Graph (v6)**: Smooth dual-series real-time graph (Emerald Download fill + Electric Cyan Upload line + peak scale indicator) showing live streaming/download activity at a glance.
+- **Connection Spec Grid**: **Location Code**, **Protocol**, **DNS Servers**, **Tunnel IP**, **Split Tunnel**, **Exit / Trace IP**, **LAN Routing** (`LAN Bypass ON` / `Strict Tunnel`), and **Interface MTU**.
+
+---
+
+## 9. Location-Based & Server `#Code` Search + Direct Connect
+
+Open the **Locations** tab to search all **118+ NordVPN countries**, cities, and ~6,000+ live NordLynx servers:
 
 | Format | Examples | Result |
 | :--- | :--- | :--- |
-| **Plain Number** | `13084`, `13229`, `9948`, `13524` | Shows exact server & location (e.g., `#13084 • Los Angeles, United States`) |
-| **Hash + Number** | `#12790`, `#9898`, `#11814`, `#11519`, `#11640` | Same exact lookup with `#` prefix |
-| **Number Range** | `#12790-12792`, `#9898-9899`, `#12394-12398`, `12179-12181` | Expands and lists every live server in the range |
+| **Plain Number** | `13084`, `13229`, `9948`, `13524` | Exact server & location (`#13084 • Los Angeles, United States`) |
+| **Hash + Number** | `#12790`, `#9898`, `#11814`, `#11519`, `#11640` | Exact lookup with `#` prefix |
+| **Number Range** | `#12790-12792`, `#9898-9899`, `#12394-12398` | Expands and lists every live server in the range |
 | **Multiple Codes** | `13084, 13089` or `#11519, #11527, #11530` | Lists all matching servers sorted by code & load |
-| **Country Prefix / Hostname** | `us13084`, `us13084.nordvpn.com`, `uk2410`, `al17` | Filters to that country prefix and exact server number |
-| **City + Code** | `Los Angeles 13084`, `Dallas #9898`, `Ashburn #11640` | Shows exact matching server + matching city card below |
+| **Country Prefix / Hostname** | `us13084`, `uk2410`, `al17` | Filters to that country prefix and exact server number |
+| **City + Code / Name** | `Los Angeles 13084`, `Tirana`, `Albania` | Exact server + matching Quick Connect city chips |
 
-Tap **Connect** (or press **OK** on your Android TV remote) on any matched server card to pin that exact server (persisted for Always-On boot auto-connect) and connect immediately.
-
-### B. Search by Country, City, or ISO Code
-- Type in the search bar:
-  - Country name: `Albania`, `Switzerland`, `Japan`, `United States`
-  - City name: `Tirana`, `Los Angeles`, `Charlotte`, `Dallas`, `Miami`, `Phoenix`, `Denver`, `Seattle`, `Chicago`, `Atlanta`, `Ashburn`
-  - 2-letter ISO code: `AL`, `CH`, `JP`, `US`, `DE`
-- Matching cities appear immediately in the **Quick Connect by City** horizontal strip — tap any city chip to jump straight into a WireGuard connection in that city.
-
-### C. Nearest Low-Load Nord Locations
-- When the search bar is empty, the **Nearest Low-Load Nord Locations** strip displays geo-optimal NordVPN WireGuard servers along with their current server load (`%`).
-- Tap any card to connect directly to that exact low-load server.
-
-### D. Browse & Pin Live Servers Inside Any Country
-1. Find any country card (e.g., **Albania** or **United States**).
-2. Tap **Connect** on the country card to connect immediately to NordVPN's recommended lowest-load server in that country.
-3. Or tap **Live Servers** to expand the live server list for that country (showing `#code`, city, hostname, station IP, and load `%`).
-4. Tap any specific server row to pin and connect directly to it.
+Tap **Connect** (or press **OK** on your TV remote) to pin and connect immediately.
 
 ---
 
-## 5. Per-App Split Tunneling (Phone & Android TV)
+## 10. Per-App Split Tunneling (Phone & Android TV)
 
-Open the **Split Tunnel** tab to control exactly which apps go through SwiftTunnel:
+Open the **Split Tunnel** tab:
+- **All Apps**: Every app routes through SwiftTunnel.
+- **Exclude Apps**: Selected apps bypass the tunnel (e.g., local banking apps).
+- **Include Only**: **Only** selected apps route through SwiftTunnel (e.g., route only **Brave Browser** through Albania, or only a specific Android TV streaming app through US `#13084`).
 
-| Option | Behavior | Example Use Case |
-| :--- | :--- | :--- |
-| **All Apps** | Every app on your device uses SwiftTunnel | Full-device protection |
-| **Exclude Apps** | All apps use SwiftTunnel **except** checked apps | Exclude local banking apps or local LAN casting apps |
-| **Include Only** | **Only** checked apps use SwiftTunnel; all others stay on local ISP | Route only **Brave Browser** through Albania, or route only a specific Android TV streaming app through UK/US |
-
-### Verifying Split Tunneling (Example: Brave on Albania)
-1. Go to **Connect** tab → select **Cloudflare + VPN** (or **Google + VPN**).
-2. Go to **Locations** tab → search `Albania` → tap **Albania** (or tap **Connect** directly).
-3. Go to **Split Tunnel** tab → select **Include Only** → search `Brave` → check **Brave**.
-4. Return to **Connect** tab and tap the **Power Orb** to connect (or reconnect if already connected).
-5. Open Brave and visit `https://ipleak.net` or `https://nordvpn.com/what-is-my-ip/` — Brave will show your **Albania NordVPN IP** while other browsers/apps remain on your local ISP IP.
-
-> **Important**: Always reconnect after changing Split Tunneling apps or switching between Include/Exclude modes because Android applies per-app routing rules when the TUN interface is built.
+Tap **Apply** (or disconnect and reconnect) after modifying split-tunnel selections so Android rebuilds the TUN per-app routing table.
 
 ---
 
-## 6. Always-On Auto-Connect on Power-Up
+## 11. Export & Import Config JSON (Phone ↔ Android TV — v6)
 
-SwiftTunnel supports two complementary layers of Always-On persistence:
+Easily clone your setup (Saved Profiles, Split-Tunnel lists, DNS presets, LAN bypass, MTU, and favorites) from your phone to your Android TV:
 
-### Layer 1: Built-In Boot Auto-Connect (Works on Phones & Android TV)
-1. Configure your desired **Routing Mode**, **Location / Pinned Server**, and **Split Tunneling** rules.
-2. Connect **at least once** and tap **OK** on Android's system VPN permission dialog.
-3. In the **Connect** tab, verify that **Auto-Connect on Power-Up** is toggled **ON** (enabled by default).
-4. Whenever your phone or Android TV powers off and boots back up:
-   - SwiftTunnel launches automatically in the background.
-   - Waits up to 45 seconds for Wi-Fi or Ethernet connectivity.
-   - Reconnects automatically to your exact pointed location, routing mode, and split-tunnel configuration (with automatic retries if the network is still settling).
-
-### Layer 2: Android OS Always-On VPN (Phones & Supported TVs)
-1. In the **Connect** tab, tap **OS Always-On** (opens Android's system VPN settings).
-2. Tap the gear icon next to **SwiftTunnel**.
-3. Toggle **Always-on VPN** ON.
-   - *(Optional)* Enable **Block connections without VPN** only when using **All Apps** mode (do **not** enable "Block connections without VPN" if you use Split Tunneling Exclude/Include modes, as Android blocks bypassed apps when lockdown is active).
-
-### Background Battery Optimization (Phones)
-- In the **Connect** tab, tap **Battery Settings** → find **SwiftTunnel** → set to **Unrestricted** to prevent aggressive OEM battery savers from pausing background tunnels during long screen-off periods.
+1. In the **Connect** tab, scroll to **Backup & Transfer Config** (badged **`NO SECRETS`**).
+2. **On Android Phone/Tablet**:
+   - Tap **Export JSON** to save `swifttunnel-config.json` anywhere via Android's file picker (zero storage permissions required).
+   - Tap **Import JSON** on another device to load the file cleanly.
+3. **On Android TV (No File Manager Required)**:
+   - Tap **Copy / Paste JSON (Android TV Friendly)** to open the built-in JSON transfer dialog.
+   - Copy or paste the JSON text (e.g., via Android TV Remote app on your phone) and tap **Import JSON**.
+4. **Security Reminder**: Your NordVPN API key and WireGuard private keys are **never** included in exported JSON — simply enter your NordVPN key once in **NordVPN Credentials** on the new device.
 
 ---
 
-## 7. Android TV Remote Navigation Tips
+## 12. Always-On Auto-Connect on Power-Up
 
-- **Left / Right / Up / Down D-Pad**: Moves the glowing **Electric Cyan** focus ring across the side NavigationRail, Power Orb, routing cards, search bar, country/city cards, and Split Tunnel app rows.
-- **OK / Center Button**: Activates the focused tile, toggles checkboxes/switches, or connects to the focused server.
-- **Back Button**: Moves focus back or exits text input fields cleanly.
+1. Configure your preferred **Routing Mode**, **DNS Preset**, **Location / `#code`**, **Split Tunnel**, **LAN Bypass**, and **MTU**.
+2. Connect **at least once** interactively and tap **OK** on Android's system VPN consent dialog.
+3. Confirm **Auto-Connect on Power-Up** is toggled **ON** in the Connect tab.
+4. On phones/supported TVs, optionally tap **OS Always-On** to enable Android's native Always-On VPN lock *(do not enable "Block connections without VPN" if you use Split Tunnel Exclude/Include modes or LAN Bypass)*.
 
 ---
 
-## 8. Troubleshooting
+## 13. Troubleshooting
 
 | Symptom | Cause | Fix |
 | :--- | :--- | :--- |
-| Included app (e.g., Brave) still shows local IP | Using `Cloudflare Only` / `Google Only` mode, or didn't reconnect after adding the app | Switch to `Cloudflare + VPN` or `Google + VPN`, ensure the app is checked under **Include Only**, then disconnect and reconnect |
-| "Invalid or expired NordVPN API key" | Token was typed incorrectly or revoked | Generate a fresh manual token in your Nord Account dashboard and tap **Swap Key** |
-| WireGuard handshake timed out | Local network blocks UDP port `51820` or server is overloaded | Try another city or live server in the **Locations** tab, or verify UDP `51820` is permitted on your router |
-| TV didn't auto-connect after reboot | VPN consent dialog was never approved before reboot, or **Auto-Connect on Power-Up** was toggled off | Connect once interactively to grant Android VPN permission and confirm **Auto-Connect on Power-Up** is ON |
-| Android TV app missing in Split Tunnel list | App has no launcher or Leanback activity | Only launchable apps (mobile + TV Leanback) are listed to remain compliant with Android package visibility policies |
+| Chromecast / Plex / NAS unreachable while VPN is on | Strict tunnel routing is active | Enable **LAN / Local Network Bypass** in **Network Tuning & Resilience** and tap **Apply** |
+| Slow throughput or stalled websites on mobile data | MTU too large for carrier CGNAT | Set **WireGuard Packet MTU** to **`1280`** and tap **Apply** |
+| Included app (e.g., Brave) still shows local IP | Using DNS-only mode (`1.1.1.1 Only` / `8.8.8.8 Only`) or didn't re-apply after editing Split Apps | Switch to `Cloudflare + VPN` or `Google + VPN`, check the app under **Include Only**, and tap **Apply** / reconnect |
+| Pinned server stopped responding | Server under NordVPN maintenance or overloaded | Enable **Auto-Failover** or tap **Hop to Lower-Load Server in Same Region** |
+| Android TV has no file picker for JSON backup | Minimal TV OS without DocumentsUI | Tap **Copy / Paste JSON (Android TV Friendly)** inside the **Backup & Transfer Config** card |
+| Quick Settings Tile opens app instead of connecting directly | First-time VPN consent or Nord API key not yet configured | Approve Android's VPN dialog once (and add your Nord API key for VPN modes); subsequent tile taps toggle immediately |

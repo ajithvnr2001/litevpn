@@ -73,10 +73,18 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.data.ApiKeySource
 import com.example.model.ConnectionMode
+import com.example.model.DnsPreset
 import com.example.model.NordCredentialsState
+import com.example.model.SavedVpnProfile
 import com.example.model.SplitTunnelMode
 import com.example.model.TunnelStatus
 import com.example.ui.MainUiState
+import com.example.ui.components.ConfigBackupCard
+import com.example.ui.components.ConnectionDetailsCard
+import com.example.ui.components.DnsPresetsCard
+import com.example.ui.components.IpLeakCheckCard
+import com.example.ui.components.NetworkTuningCard
+import com.example.ui.components.SavedProfilesCard
 import com.example.ui.components.tvFocusableClickable
 import com.example.ui.icons.AppIcons
 import com.example.ui.theme.CloudflareAmber
@@ -88,9 +96,26 @@ import com.example.ui.theme.JetBrainsMonoFamily
 @Composable
 fun ConnectScreen(
     uiState: MainUiState,
+    isAndroidTv: Boolean = false,
+    isWideLayout: Boolean = false,
     onToggleConnection: () -> Unit,
     onApplyReconfigure: () -> Unit,
     onSelectMode: (ConnectionMode) -> Unit,
+    onSelectDnsPreset: (DnsPreset) -> Unit,
+    onSaveCustomDns: (String, String) -> Boolean,
+    onToggleLanBypass: (Boolean) -> Unit,
+    onToggleAutoFailover: (Boolean) -> Unit,
+    onSelectMtu: (Int) -> Unit,
+    onHopLowerLoadServer: () -> Unit,
+    onSaveProfile: (String) -> Unit,
+    onApplyProfile: (SavedVpnProfile) -> Unit,
+    onDeleteProfile: (String) -> Unit,
+    onRunLeakCheck: () -> Unit,
+    onExportBackupFile: () -> Unit,
+    onImportBackupFile: () -> Unit,
+    onGetBackupJson: () -> String,
+    onCopyBackupJson: (String) -> Unit,
+    onImportBackupJson: (String) -> Boolean,
     onOpenLocations: () -> Unit,
     onOpenSplitTunnel: () -> Unit,
     onRefreshServer: () -> Unit,
@@ -134,91 +159,297 @@ fun ConnectScreen(
         )
     }
 
-    Box(
-        modifier = modifier.fillMaxSize(),
-        contentAlignment = Alignment.TopCenter
-    ) {
-        LazyColumn(
-            modifier = Modifier
+    val useTwoColumnTvDashboard = isAndroidTv || isWideLayout
+    val activeAppNames = remember(uiState.installedApps, uiState.activeSplitPackages) {
+        uiState.installedApps
+            .filter { it.packageName in uiState.activeSplitPackages }
+            .map { it.appName }
+    }
+
+    if (useTwoColumnTvDashboard) {
+        // Widescreen & Android TV 2-Column Command Center:
+        // Keeps Power Orb + Live Connection Details & Location Code Stats always visible at 10-ft distance
+        Row(
+            modifier = modifier
                 .fillMaxSize()
-                .widthIn(max = 640.dp),
-            contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = if (isAndroidTv) 16.dp else 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            item {
-                TopBrandHeader(
-                    uiState = uiState,
-                    accentColor = accentColor,
-                    onRefresh = onRefreshServer
-                )
-            }
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxSize(),
+                contentPadding = PaddingValues(vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                item {
+                    TopBrandHeader(
+                        uiState = uiState,
+                        accentColor = accentColor,
+                        onRefresh = onRefreshServer
+                    )
+                }
 
-            item {
-                AnimatedVisibility(visible = uiState.hasPendingReconfigure) {
-                    PendingReconfigureBanner(onApply = onApplyReconfigure)
+                item {
+                    AnimatedVisibility(visible = uiState.hasPendingReconfigure) {
+                        PendingReconfigureBanner(onApply = onApplyReconfigure)
+                    }
+                }
+
+                item {
+                    HeroPowerOrbCard(
+                        uiState = uiState,
+                        accentColor = accentColor,
+                        onToggleConnection = onToggleConnection
+                    )
+                }
+
+                item {
+                    ConnectionDetailsCard(
+                        uiState = uiState,
+                        accentColor = accentColor,
+                        isAndroidTv = isAndroidTv,
+                        onOpenLocations = onOpenLocations
+                    )
+                }
+
+                item {
+                    IpLeakCheckCard(
+                        isRunning = uiState.isRunningLeakCheck,
+                        result = uiState.leakCheckResult,
+                        isVpnConnected = uiState.isConnected && uiState.vpnSession.isWireGuardVerified,
+                        onRunLeakCheck = onRunLeakCheck
+                    )
                 }
             }
 
-            item {
-                HeroPowerOrbCard(
-                    uiState = uiState,
-                    accentColor = accentColor,
-                    onToggleConnection = onToggleConnection
-                )
-            }
-
-            item {
-                RoutingCombinationSection(
-                    selectedMode = uiState.selectedMode,
-                    onSelectMode = onSelectMode
-                )
-            }
-
-            item {
-                ActiveLocationCard(
-                    uiState = uiState,
-                    onOpenLocations = onOpenLocations,
-                    onRefreshServer = onRefreshServer
-                )
-            }
-
-            item {
-                val activeAppNames = remember(uiState.installedApps, uiState.activeSplitPackages) {
-                    uiState.installedApps
-                        .filter { it.packageName in uiState.activeSplitPackages }
-                        .map { it.appName }
+            LazyColumn(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxSize(),
+                contentPadding = PaddingValues(vertical = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                item {
+                    SavedProfilesCard(
+                        profiles = uiState.savedProfiles,
+                        onSaveProfile = onSaveProfile,
+                        onApplyProfile = onApplyProfile,
+                        onDeleteProfile = onDeleteProfile
+                    )
                 }
-                SplitTunnelSummaryCard(
-                    splitMode = uiState.splitMode,
-                    selectedCount = uiState.activeSplitPackages.size,
-                    selectedAppNames = activeAppNames,
-                    onOpenSplitTunnel = onOpenSplitTunnel
-                )
-            }
 
-            item {
-                BackgroundOptimizationCard(
-                    isUnrestricted = uiState.isIgnoringBatteryOptimizations,
-                    autoConnectOnBoot = uiState.autoConnectOnBoot,
-                    cacheHits = uiState.vpnSession.dnsCacheHits,
-                    totalQueries = uiState.vpnSession.dnsQueriesForwarded,
-                    onToggleAutoConnectOnBoot = onToggleAutoConnectOnBoot,
-                    onOpenBatterySettings = onOpenBatterySettings,
-                    onOpenSystemVpnSettings = onOpenSystemVpnSettings
-                )
-            }
+                item {
+                    RoutingCombinationSection(
+                        selectedMode = uiState.selectedMode,
+                        onSelectMode = onSelectMode
+                    )
+                }
 
-            item {
-                NordDiagnosticsCard(
-                    uiState = uiState,
-                    onSwapApiKey = { showSwapKeyDialog = true },
-                    onRetryCredentials = onRetryCredentials,
-                    onCopyWireGuardConfig = onCopyWireGuardConfig
-                )
-            }
+                item {
+                    DnsPresetsCard(
+                        uiState = uiState,
+                        onSelectDnsPreset = onSelectDnsPreset,
+                        onSaveCustomDns = onSaveCustomDns
+                    )
+                }
 
-            item {
-                Spacer(modifier = Modifier.height(12.dp))
+                item {
+                    ActiveLocationCard(
+                        uiState = uiState,
+                        onOpenLocations = onOpenLocations,
+                        onRefreshServer = onRefreshServer
+                    )
+                }
+
+                item {
+                    NetworkTuningCard(
+                        uiState = uiState,
+                        onToggleLanBypass = onToggleLanBypass,
+                        onToggleAutoFailover = onToggleAutoFailover,
+                        onSelectMtu = onSelectMtu,
+                        onHopLowerLoadServer = onHopLowerLoadServer
+                    )
+                }
+
+                item {
+                    SplitTunnelSummaryCard(
+                        splitMode = uiState.splitMode,
+                        selectedCount = uiState.activeSplitPackages.size,
+                        selectedAppNames = activeAppNames,
+                        onOpenSplitTunnel = onOpenSplitTunnel
+                    )
+                }
+
+                item {
+                    BackgroundOptimizationCard(
+                        isUnrestricted = uiState.isIgnoringBatteryOptimizations,
+                        autoConnectOnBoot = uiState.autoConnectOnBoot,
+                        cacheHits = uiState.vpnSession.dnsCacheHits,
+                        totalQueries = uiState.vpnSession.dnsQueriesForwarded,
+                        onToggleAutoConnectOnBoot = onToggleAutoConnectOnBoot,
+                        onOpenBatterySettings = onOpenBatterySettings,
+                        onOpenSystemVpnSettings = onOpenSystemVpnSettings
+                    )
+                }
+
+                item {
+                    ConfigBackupCard(
+                        onExportBackupFile = onExportBackupFile,
+                        onImportBackupFile = onImportBackupFile,
+                        onGetBackupJson = onGetBackupJson,
+                        onCopyBackupJson = onCopyBackupJson,
+                        onImportBackupJson = onImportBackupJson
+                    )
+                }
+
+                item {
+                    NordDiagnosticsCard(
+                        uiState = uiState,
+                        onSwapApiKey = { showSwapKeyDialog = true },
+                        onRetryCredentials = onRetryCredentials,
+                        onCopyWireGuardConfig = onCopyWireGuardConfig
+                    )
+                }
+            }
+        }
+    } else {
+        Box(
+            modifier = modifier.fillMaxSize(),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .widthIn(max = 640.dp),
+                contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                item {
+                    TopBrandHeader(
+                        uiState = uiState,
+                        accentColor = accentColor,
+                        onRefresh = onRefreshServer
+                    )
+                }
+
+                item {
+                    AnimatedVisibility(visible = uiState.hasPendingReconfigure) {
+                        PendingReconfigureBanner(onApply = onApplyReconfigure)
+                    }
+                }
+
+                item {
+                    HeroPowerOrbCard(
+                        uiState = uiState,
+                        accentColor = accentColor,
+                        onToggleConnection = onToggleConnection
+                    )
+                }
+
+                item {
+                    ConnectionDetailsCard(
+                        uiState = uiState,
+                        accentColor = accentColor,
+                        isAndroidTv = false,
+                        onOpenLocations = onOpenLocations
+                    )
+                }
+
+                item {
+                    SavedProfilesCard(
+                        profiles = uiState.savedProfiles,
+                        onSaveProfile = onSaveProfile,
+                        onApplyProfile = onApplyProfile,
+                        onDeleteProfile = onDeleteProfile
+                    )
+                }
+
+                item {
+                    RoutingCombinationSection(
+                        selectedMode = uiState.selectedMode,
+                        onSelectMode = onSelectMode
+                    )
+                }
+
+                item {
+                    DnsPresetsCard(
+                        uiState = uiState,
+                        onSelectDnsPreset = onSelectDnsPreset,
+                        onSaveCustomDns = onSaveCustomDns
+                    )
+                }
+
+                item {
+                    ActiveLocationCard(
+                        uiState = uiState,
+                        onOpenLocations = onOpenLocations,
+                        onRefreshServer = onRefreshServer
+                    )
+                }
+
+                item {
+                    NetworkTuningCard(
+                        uiState = uiState,
+                        onToggleLanBypass = onToggleLanBypass,
+                        onToggleAutoFailover = onToggleAutoFailover,
+                        onSelectMtu = onSelectMtu,
+                        onHopLowerLoadServer = onHopLowerLoadServer
+                    )
+                }
+
+                item {
+                    IpLeakCheckCard(
+                        isRunning = uiState.isRunningLeakCheck,
+                        result = uiState.leakCheckResult,
+                        isVpnConnected = uiState.isConnected && uiState.vpnSession.isWireGuardVerified,
+                        onRunLeakCheck = onRunLeakCheck
+                    )
+                }
+
+                item {
+                    SplitTunnelSummaryCard(
+                        splitMode = uiState.splitMode,
+                        selectedCount = uiState.activeSplitPackages.size,
+                        selectedAppNames = activeAppNames,
+                        onOpenSplitTunnel = onOpenSplitTunnel
+                    )
+                }
+
+                item {
+                    BackgroundOptimizationCard(
+                        isUnrestricted = uiState.isIgnoringBatteryOptimizations,
+                        autoConnectOnBoot = uiState.autoConnectOnBoot,
+                        cacheHits = uiState.vpnSession.dnsCacheHits,
+                        totalQueries = uiState.vpnSession.dnsQueriesForwarded,
+                        onToggleAutoConnectOnBoot = onToggleAutoConnectOnBoot,
+                        onOpenBatterySettings = onOpenBatterySettings,
+                        onOpenSystemVpnSettings = onOpenSystemVpnSettings
+                    )
+                }
+
+                item {
+                    ConfigBackupCard(
+                        onExportBackupFile = onExportBackupFile,
+                        onImportBackupFile = onImportBackupFile,
+                        onGetBackupJson = onGetBackupJson,
+                        onCopyBackupJson = onCopyBackupJson,
+                        onImportBackupJson = onImportBackupJson
+                    )
+                }
+
+                item {
+                    NordDiagnosticsCard(
+                        uiState = uiState,
+                        onSwapApiKey = { showSwapKeyDialog = true },
+                        onRetryCredentials = onRetryCredentials,
+                        onCopyWireGuardConfig = onCopyWireGuardConfig
+                    )
+                }
+
+                item {
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
             }
         }
     }
@@ -392,19 +623,28 @@ private fun HeroPowerOrbCard(
                             .background(accentColor)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
+                    val activeServer = uiState.vpnSession.activeServer ?: uiState.recommendedServer
                     val statusLabel = when (uiState.vpnSession.status) {
                         TunnelStatus.CONNECTED -> {
                             val proto = if (uiState.vpnSession.isWireGuardVerified) {
-                                "WIREGUARD • ${uiState.vpnSession.activeServer?.countryCode ?: "VPN"}"
+                                val codePart = activeServer?.let { "${it.countryCode} ${it.serverCodeTag}" } ?: "VPN"
+                                "WIREGUARD • $codePart"
                             } else {
-                                "DNS TUNNEL"
+                                "DNS • ${uiState.vpnSession.primaryDns}"
                             }
                             "$proto • ${formatDuration(uiState.elapsedSeconds)}"
                         }
                         TunnelStatus.CONNECTING -> "HANDSHAKING…"
                         TunnelStatus.DISCONNECTING -> "DISCONNECTING…"
                         TunnelStatus.ERROR -> "TUNNEL ERROR"
-                        TunnelStatus.DISCONNECTED -> "READY • ${uiState.selectedMode.shortTitle.uppercase()}"
+                        TunnelStatus.DISCONNECTED -> {
+                            val codeHint = if (uiState.selectedMode.usesVpn && activeServer != null) {
+                                " • ${activeServer.serverCodeTag}"
+                            } else {
+                                ""
+                            }
+                            "READY • ${uiState.selectedMode.shortTitle.uppercase()}$codeHint"
+                        }
                     }
                     Text(
                         text = statusLabel,
@@ -527,7 +767,7 @@ private fun HeroPowerOrbCard(
             ) {
                 TelemetryMetric(
                     label = "DNS",
-                    value = uiState.selectedMode.primaryDns,
+                    value = if (isConnected) uiState.vpnSession.primaryDns else uiState.effectiveDns.first,
                     highlight = accentColor
                 )
                 TelemetryMetric(
@@ -858,19 +1098,32 @@ private fun ActiveLocationCard(
                     )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = buildString {
-                                append(server.countryName)
-                                if (server.cityName.isNotBlank()) {
-                                    append(" • ")
-                                    append(server.cityName)
-                                }
-                            },
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = ElectricCyan.copy(alpha = 0.16f)
+                            ) {
+                                Text(
+                                    text = server.serverCodeTag,
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = JetBrainsMonoFamily,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    color = ElectricCyan,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                            Text(
+                                text = server.locationLabel,
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                         Text(
                             text = "${server.hostname} • ${server.stationIp} • Load ${server.loadPercent}%",
                             style = MaterialTheme.typography.bodySmall,

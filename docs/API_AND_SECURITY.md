@@ -1,80 +1,69 @@
-# NordVPN API Integration, Cryptography & Security Model
+# NordVPN API Integration, Cryptography & Security Model (v6.0)
 
-This document details every external API endpoint used by **SwiftTunnel**, how API credentials and WireGuard private keys are protected, how R8 optimization works, and how the app satisfies Google Play Developer Program policies.
+This document details every external API endpoint used by **SwiftTunnel v6.0**, how API credentials, WireGuard private keys, and exported JSON backups are protected, how R8 optimization maintains the **3.6 MB** APK footprint, and how the app complies with Google Play Developer Program policies.
 
 ---
 
-## 1. NordVPN v1 REST API Integration (`data/NordApiClient.kt`)
+## 1. External API Endpoints (`data/NordApiClient.kt`)
 
-SwiftTunnel communicates directly with NordVPN's official `https://api.nordvpn.com/v1` endpoints over HTTPS using Android's built-in `HttpURLConnection` + `org.json` (zero third-party HTTP/JSON bloat).
+SwiftTunnel communicates over HTTPS using Android's built-in `HttpURLConnection` + `org.json` / `android.util.JsonReader` (zero third-party HTTP/JSON library bloat).
 
 ### 1.1 Fetch All Supported Countries & Cities
-
 - **Endpoint**: `GET https://api.nordvpn.com/v1/servers/countries`
 - **Authentication**: None required (public catalog)
-- **Usage**:
-  - Syncs all live NordVPN countries (`id`, `name`, `code`, `server_count`, and nested `cities[]` with `id`, `name`, `latitude`, `longitude`).
-  - Merged with `NordCountryCatalog.fallbackCountries` (118+ countries including Albania `id=2, code=AL`) so the UI works instantly even before network sync completes.
+- **Usage**: Syncs all live NordVPN countries (`id`, `name`, `code`, `cities[]`) and merges them with `NordCountryCatalog.fallbackCountries` (118+ offline fallback countries).
 
-### 1.2 Fetch Recommended / Location-Based NordLynx Servers
-
+### 1.2 Fetch Recommended / Location-Based NordLynx Servers (Also Powers Failover & Server Hop)
 - **Endpoint**:
   ```http
   GET https://api.nordvpn.com/v1/servers/recommendations?filters[servers_technologies][identifier]=wireguard_udp&limit=<N>
   ```
-  Optional country filter:
-  ```http
-  &filters[country_id]=<COUNTRY_ID>
-  ```
+  Optional country filter: `&filters[country_id]=<COUNTRY_ID>`
 - **Authentication**: None required
-- **Parsed Fields**:
-  - `id`: Server ID
-  - `name`: Display name (e.g., `Albania #17`)
-  - `hostname`: FQDN (e.g., `al17.nordvpn.com`)
-  - `station`: Server IPv4 WireGuard endpoint address
-  - `load`: Real-time percentage load (`0..100`)
-  - `locations[0].country`: Country `id`, `name`, `code`, and `city.name`
-  - `technologies[]`: Finds technology with `identifier == "wireguard_udp"` and extracts `metadata[name == "public_key"].value` (Base64-encoded 32-byte X25519 server public key).
-- **City Prioritization**:
-  - When a user selects a specific city (e.g., `Frankfurt`, `Tokyo`, `Tirana`), `NordApiClient` requests a larger recommendation batch (`limit = 20`) for that country, sorts servers matching the target city name first by lowest `load`, and falls back to the lowest-load server in the country if the city pool is saturated.
-- **Geo-Nearest Recommendations**:
-  - Calling `/recommendations` without `country_id` returns NordVPN's geo-proximate lowest-load WireGuard servers for the user's current region, powering the **Nearest Low-Load Nord Locations** strip.
+- **Parsed Fields**: `id`, `name`, `hostname`, `station` (IPv4 endpoint), `load` (`0..100`), `locations[0].country.{name, code, city.name}`, and `technologies[identifier == "wireguard_udp"].metadata[name == "public_key"].value`.
+- **v6 Usage**:
+  - Powers country/city direct connect and the **Nearest Low-Load** strip.
+  - Powers **Auto-Failover** in `SwiftTunnelVpnService` (selects the next lowest-load server in the same city/country if the primary WireGuard handshake fails).
+  - Powers **1-Tap Lower-Load Server Hop** in `MainViewModel` (excludes current hostname and hops to the lowest-load candidate in the same region).
 
-### 1.2b Full Live NordLynx Server Directory (Server Number / `#Code` Search)
-
+### 1.3 Full Live NordLynx Server Directory (Server `#Code` Search & Saved Profile Hostname Lookup)
 - **Endpoint**:
   ```http
   GET https://api.nordvpn.com/v1/servers?limit=16384&filters[servers_technologies][identifier]=wireguard_udp
   Accept-Encoding: gzip
   ```
   *(Automatic fallback to `limit=0` if fewer than 50 records are returned.)*
-- **Authentication**: None required
 - **Streaming & Caching**:
-  - Decoded on-the-fly via `GZIPInputStream` → `android.util.JsonReader` so the ~20 MB uncompressed payload is never loaded into a single heap `String`.
-  - Extracts `id`, `name` (e.g., `United States #13084`), `hostname` (`us13084.nordvpn.com`), `station`, `load`, `locations[0].country.{name, code, city.name}`, and the `wireguard_udp` `public_key` regardless of JSON key ordering.
-  - Cached in volatile RAM for 15 minutes (protected by a coroutine `Mutex`) and invalidated manually whenever the user taps **Refresh** / **Resync**.
+  - Decoded on-the-fly via `GZIPInputStream` → `android.util.JsonReader` so the ~20 MB uncompressed payload is never allocated as a single heap `String`.
+  - Cached in volatile RAM for 15 minutes (protected by a coroutine `Mutex`).
+  - Reused by `fetchServerByHostname(hostname)` when applying a **1-Tap Saved Profile** with a pinned server `#code` (e.g., `us13084.nordvpn.com`).
 
-### 1.3 Fetch User NordLynx Private Key (Credentials Verification)
-
+### 1.4 Fetch User NordLynx Private Key (Credentials Verification)
 - **Endpoint**: `GET https://api.nordvpn.com/v1/users/services/credentials`
-- **Authentication**: HTTP Basic Auth
-  ```http
-  Authorization: Basic base64("token:<NORD_API_KEY>")
-  ```
+- **Authentication**: HTTP Basic Auth (`Authorization: Basic base64("token:<NORD_API_KEY>")`)
 - **Response Handling**:
-  - `HTTP 200`: Extracts `nordlynx_private_key` (Base64-encoded 32-byte X25519 client private key) and `username`.
+  - `HTTP 200`: Extracts `nordlynx_private_key` (Base64-encoded 32-byte X25519 client private key) and masked username.
   - `HTTP 401` / `403`: Reports invalid or expired NordVPN access token clearly in the UI.
-  - Non-2xx / Network failure: Surfaces diagnostic error message without crashing or leaking the token.
 
-### 1.4 NordLynx WireGuard Interface Parameters
+### 1.5 Built-In IP & Leak Verification Trace
+- **Endpoint**: `GET https://1.1.1.1/cdn-cgi/trace`
+- **Authentication**: None required
+- **Parsed Key-Value Fields**: `ip` (observed public exit IP), `loc` (2-letter ISO country code), `colo` (Cloudflare edge POP, e.g., `LAX`, `TIA`, `FRA`), and `tls` (TLS protocol version).
+- **Verification Logic (`MainViewModel.runIpAndLeakCheck`)**:
+  - Checks whether observed `ip` matches the active NordVPN server's `stationIp`.
+  - Verifies whether observed exit IP is IPv4-only / whether the active WireGuard tunnel's `::/0` IPv6 drop trap is engaged.
+  - Reports active primary/secondary DNS resolvers (including AdGuard, Quad9, or Custom IPv4 overrides).
+
+### 1.6 NordLynx WireGuard Interface Parameters
 
 | Parameter | Value |
 | :--- | :--- |
 | Tunnel IPv4 Client Address | `10.5.0.2/32` |
 | Tunnel IPv6 Leak-Trap Address | `fd00:5:0::2/128` |
 | Server Endpoint Port | `UDP 51820` |
-| MTU | `1280` bytes (prevents fragmentation across cellular/Wi-Fi/ISP PPPoE links) |
-| AllowedIPs (VPN Modes) | `0.0.0.0/0` and `::/0` |
+| Configurable MTU (v6) | `1280` (default safe mobile), `1360`, `1400`, or `1420` (fast Wi-Fi/Ethernet); clamped to `1280..1420` |
+| AllowedIPs (Strict VPN Mode) | `0.0.0.0/0` and `::/0` |
+| AllowedIPs (LAN Bypass ON) | API 33+: `0.0.0.0/0` minus RFC 1918 / link-local / multicast via `excludeRoute()`; API 24–32: exact IPv4 CIDR complement routes + `::/0` |
 | Persistent Keepalive | `25 seconds` |
 | Session Rekey Interval | `120 seconds` |
 
@@ -82,30 +71,24 @@ SwiftTunnel communicates directly with NordVPN's official `https://api.nordvpn.c
 
 ## 2. Swappable Key Security (`data/SecureKeyStorage.kt`)
 
-SwiftTunnel allows the user to enter, test, swap, or clear any NordVPN API key at runtime.
-
-### 2.1 Android Keystore Encryption Flow
-
-1. **Master Key**: Generated inside `AndroidKeyStore` under alias `swifttunnel_nord_key_aes` with:
-   - Algorithm: `AES` (256-bit)
-   - Block mode: `GCM`
-   - Padding: `NoPadding`
-   - Purpose: `PURPOSE_ENCRYPT | PURPOSE_DECRYPT`
-2. **Encryption on Save**:
-   - Initializes `Cipher.getInstance("AES/GCM/NoPadding")` in `ENCRYPT_MODE` (Android Keystore generates a fresh cryptographically random 12-byte IV per write).
-   - Stores Base64-encoded `iv` and `ciphertext` (including 128-bit GCM authentication tag) in private `SharedPreferences` (`Context.MODE_PRIVATE`).
-   - Plaintext API key is **never** written to SharedPreferences, logcat, or files.
+### 2.1 Android Keystore AES-256-GCM Vault
+1. **Master Key**: Generated inside hardware-backed `AndroidKeyStore` under alias `swifttunnel_nord_key_aes` (`AES`, 256-bit, `GCM`, `NoPadding`).
+2. **Encryption on Save**: Generates a fresh 12-byte random IV per write and stores Base64 `iv` + `ciphertext` (with 128-bit GCM auth tag) in `Context.MODE_PRIVATE` `SharedPreferences`. Plaintext tokens are never written to disk or logs.
 3. **Key Resolution Priority**:
    1. Runtime user-saved key decrypted from Android Keystore (`SecureKeyStorage`).
-   2. Optional build-time fallback from `BuildConfig.NORD_API_KEY` (injected via `.env` / Secrets Gradle Plugin — ignored if empty or placeholder `"YOUR_NORD_API_KEY"`).
-   3. If neither exists, VPN modes prompt the user to paste a NordVPN token; DNS-only modes (`1.1.1.1 Only` / `8.8.8.8 Only`) continue to work with zero key required.
-4. **Key Masking in UI**:
-   - The UI displays only a masked preview (e.g., `e9f2ab••••••11cf`) and never echoes the full secret back into logs or persistent text fields.
+   2. Optional build-time fallback from `BuildConfig.NORD_API_KEY` (injected via `.env` / Secrets Gradle Plugin — ignored if blank or placeholder).
+   3. If neither exists, VPN modes prompt the user to enter a NordVPN token; DNS-only modes (`1.1.1.1 Only` / `8.8.8.8 Only`, plus AdGuard/Quad9/Custom DNS) work with zero key required.
 
 ### 2.2 WireGuard Private Key Protection (`vpn/VpnKeyBridge.kt`)
+- The `nordlynx_private_key` returned by NordVPN lives strictly in volatile RAM (`VpnKeyBridge`) and is cleared on disconnect.
 
-- The `nordlynx_private_key` returned by NordVPN is kept strictly in volatile RAM (`VpnKeyBridge`) and cleared on disconnect (`VpnKeyBridge.clear()`).
-- Private key byte arrays in `WireGuardSession` / `WireGuardTunnelEngine` are never logged.
+### 2.3 Secret-Free Config Backup Invariant (`data/ConfigBackupCodec.kt`)
+- Exported JSON files contain **zero secrets** and explicitly declare `"secretsExcluded": true`.
+- Neither the encrypted/decrypted NordVPN API key nor the WireGuard private key is ever serialized into or parsed from backup JSON.
+- Imported fields are strictly validated:
+  - `customDnsPrimary` / `customDnsSecondary` must pass `isValidIpv4Address()` or are sanitized to `""`.
+  - `customMtu` and per-profile `mtu` are clamped to `[1280, 1420]`.
+  - Unknown enum IDs safely fall back to defaults (`CLOUDFLARE_PLUS_VPN`, `MODE_DEFAULT`, `ALL_APPS`).
 
 ---
 
@@ -113,39 +96,40 @@ SwiftTunnel allows the user to enter, test, swap, or clear any NordVPN API key a
 
 | Permission / Feature | Declaration | Justification & Policy Compliance |
 | :--- | :--- | :--- |
-| `INTERNET` | Normal (install-time) | Required to query NordVPN API and transmit WireGuard UDP/DNS packets |
-| `ACCESS_NETWORK_STATE` | Normal (install-time) | Used by `ConnectivityManager.NetworkCallback` to detect Wi-Fi/Ethernet readiness on boot |
-| `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_SPECIAL_USE` | Normal + Manifest `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` | Keeps `SwiftTunnelVpnService` alive reliably in the background with a transparent user notification |
-| `POST_NOTIFICATIONS` | Runtime (Android 13+) | Displays persistent VPN status notification with quick-disconnect action; app degrades gracefully if denied |
+| `INTERNET` | Normal (install-time) | NordVPN API calls, Cloudflare trace leak check, and WireGuard UDP/DNS transport |
+| `ACCESS_NETWORK_STATE` | Normal (install-time) | `ConnectivityManager.NetworkCallback` for Boot network wait and Wi-Fi ↔ 5G Handover |
+| `FOREGROUND_SERVICE` + `FOREGROUND_SERVICE_SPECIAL_USE` | Normal + Manifest `PROPERTY_SPECIAL_USE_FGS_SUBTYPE` | Keeps `SwiftTunnelVpnService` alive reliably with a transparent user notification |
+| `POST_NOTIFICATIONS` | Runtime (Android 13+) | Persistent VPN status notification with `#code` & quick-disconnect action; degrades gracefully if denied |
 | `RECEIVE_BOOT_COMPLETED` | Normal (install-time) | Powers optional **Auto-Connect on Power-Up** on phones and Android TV |
 | `android.permission.BIND_VPN_SERVICE` | Service permission on `SwiftTunnelVpnService` | System-only binding requirement for Android `VpnService` |
-| `<queries>` (`LAUNCHER` + `LEANBACK_LAUNCHER`) | Scoped package visibility | Discovers installed mobile and Android TV apps for Split Tunneling **without** requesting the restricted `QUERY_ALL_PACKAGES` permission |
-| `android.software.leanback` (`required="false"`) & `android.hardware.touchscreen` (`required="false"`) | Manifest `<uses-feature>` | Allows a single universal APK to install seamlessly on Android Phones, Tablets, Foldables, and Android TV / Google TV |
+| `android.permission.BIND_QUICK_SETTINGS_TILE` | Service permission on `SwiftTunnelTileService` | System-only binding requirement for Android Quick Settings Tile |
+| **Zero Storage Permissions** | `ActivityResultContracts.CreateDocument` & `OpenDocument` | Export/Import JSON backups via Android Storage Access Framework without requesting `READ_EXTERNAL_STORAGE` or `MANAGE_EXTERNAL_STORAGE` |
+| `<queries>` (`LAUNCHER` + `LEANBACK_LAUNCHER`) | Scoped package visibility | Discovers installed mobile and Android TV apps for Split Tunneling **without** requesting `QUERY_ALL_PACKAGES` |
+| `android.software.leanback` (`required="false"`) & `android.hardware.touchscreen` (`required="false"`) | Manifest `<uses-feature>` | Allows a single universal 3.6 MB APK to install across Phones, Tablets, Foldables, and Android TV / Google TV |
 
 ### Battery Optimization Policy
-- SwiftTunnel does **not** request `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`. Instead, users can optionally open Android's standard `Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS` screen via the UI shortcut if their OEM aggressively kills background VPN services.
+- SwiftTunnel does **not** request `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`. Users can optionally open Android's standard `Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS` screen via the UI shortcut if their OEM aggressively kills background VPN services.
 
 ---
 
 ## 4. R8 / ProGuard Configuration (`app/proguard-rules.pro`)
 
-To maintain the **< 5 MB** APK size while keeping reflection/manifest entry points intact:
-
 ```proguard
-# Keep VPN service, boot receiver, and AndroidViewModel constructor
+# Keep VPN service, Quick Settings tile, boot receiver, and AndroidViewModel constructor
 -keep class com.example.vpn.SwiftTunnelVpnService { *; }
+-keep class com.example.vpn.SwiftTunnelTileService { *; }
 -keep class com.example.vpn.BootCompletedReceiver { *; }
 -keepclassmembers class * extends androidx.lifecycle.AndroidViewModel {
     public <init>(android.app.Application);
 }
 ```
 
-Both `debug` and `release` build types enable `isMinifyEnabled = true` and `isShrinkResources = true` so even development APKs (`vpnv3.apk`) remain ~3.4 MB.
+Both `debug` and `release` build types enable `isMinifyEnabled = true` and `isShrinkResources = true`, keeping `vpnv6.apk` at **3.6 MB**.
 
 ---
 
 ## 5. Threat Model & Known Limitations
 
-- **No Traffic Logging**: SwiftTunnel performs zero analytics, telemetry uploads, or DNS query history storage. All session counters live exclusively in memory and reset on disconnect.
-- **NordVPN Account Scope**: The NordVPN access token grants access only to your NordVPN service credentials (`nordlynx_private_key`). Treat it like a password and revoke/rotate it anytime from your Nord Account dashboard, then paste the new token into SwiftTunnel.
-- **First-Time VPN Consent on Reboot**: Android security architecture requires interactive user approval (`VpnService.prepare`) at least once before any VPN app can establish a tunnel automatically on boot. After granting permission once, boot auto-connect operates unattended.
+- **No Traffic Logging**: SwiftTunnel performs zero analytics, telemetry uploads, or DNS query history storage. All byte counters and 30-second sparkline samples live exclusively in volatile RAM and reset on disconnect.
+- **LAN Bypass Trade-Off**: Enabling **LAN / Local Network Bypass** intentionally allows traffic destined to private RFC 1918 subnets (`192.168.0.0/16`, `10.0.0.0/8`, `172.16.0.0/12`) and multicast (`224.0.0.0/4`) to bypass the WireGuard tunnel so local casting/NAS/Plex work. Keep it **OFF** on untrusted public Wi-Fi networks (airports, hotels, cafés) when strict isolation is preferred.
+- **First-Time VPN Consent on Reboot / Quick Settings**: Android requires interactive approval of the OS VPN consent dialog (`VpnService.prepare`) at least once before unattended boot auto-connect or 1-tap Quick Settings activation can start the tunnel directly.

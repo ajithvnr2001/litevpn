@@ -4,19 +4,23 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
+import android.net.IpPrefix
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.service.quicksettings.TileService
 import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.example.R
+import com.example.data.ConfigBackupCodec
 import com.example.data.NordApiClient
 import com.example.data.PreferencesRepository
 import com.example.data.SecureKeyStorage
@@ -24,6 +28,7 @@ import com.example.model.ConnectionMode
 import com.example.model.NordServer
 import com.example.model.SplitTunnelMode
 import com.example.model.TunnelStatus
+import com.example.model.resolveEffectiveDns
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +38,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import java.net.InetAddress
 
 class SwiftTunnelVpnService : VpnService() {
 
@@ -45,6 +51,26 @@ class SwiftTunnelVpnService : VpnService() {
     private var dnsForwarder: DnsPacketForwarder? = null
     private var wireGuardEngine: WireGuardTunnelEngine? = null
     private var connectJob: Job? = null
+    private var handoverCallback: ConnectivityManager.NetworkCallback? = null
+    private var handoverReconnectJob: Job? = null
+    @Volatile
+    private var activeUnderlyingNetHandle: Long = -1L
+
+    private data class ActiveTunnelConfig(
+        val mode: ConnectionMode,
+        val primaryDns: String,
+        val secondaryDns: String,
+        val splitMode: SplitTunnelMode,
+        val splitPackages: Set<String>,
+        val server: NordServer?,
+        val lanBypassEnabled: Boolean,
+        val autoFailoverEnabled: Boolean,
+        val mtu: Int,
+        val latencyMs: Int?
+    )
+
+    @Volatile
+    private var currentConfig: ActiveTunnelConfig? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -61,17 +87,25 @@ class SwiftTunnelVpnService : VpnService() {
                 prefs.isAutoConnectOnBootEnabled()
             if (shouldRestore) {
                 val restoredMode = prefs.getConnectionMode()
-                val restoredSplitMode = prefs.getSplitTunnelMode()
-                val restoredPackages = prefs.getActiveSplitPackages()
-                val restoredServer = prefs.getLastActiveServer()
-                startConnectAsync(
+                val (pDns, sDns) = resolveEffectiveDns(
                     mode = restoredMode,
-                    splitMode = restoredSplitMode,
-                    splitPackages = restoredPackages,
-                    server = restoredServer,
-                    latencyMs = null,
-                    waitForNetwork = true
+                    preset = prefs.getDnsPreset(),
+                    customPrimary = prefs.getCustomDnsPrimary(),
+                    customSecondary = prefs.getCustomDnsSecondary()
                 )
+                val cfg = ActiveTunnelConfig(
+                    mode = restoredMode,
+                    primaryDns = pDns,
+                    secondaryDns = sDns,
+                    splitMode = prefs.getSplitTunnelMode(),
+                    splitPackages = prefs.getActiveSplitPackages(),
+                    server = prefs.getLastActiveServer(),
+                    lanBypassEnabled = prefs.isLanBypassEnabled(),
+                    autoFailoverEnabled = prefs.isAutoFailoverEnabled(),
+                    mtu = prefs.getCustomMtu(),
+                    latencyMs = null
+                )
+                startConnectAsync(cfg, waitForNetwork = true)
                 return START_STICKY
             }
             stopSelf()
@@ -85,20 +119,38 @@ class SwiftTunnelVpnService : VpnService() {
             }
             ACTION_CONNECT -> {
                 val mode = ConnectionMode.fromId(intent.getStringExtra(EXTRA_MODE))
+                val (defaultPrimary, defaultSecondary) = resolveEffectiveDns(
+                    mode = mode,
+                    preset = prefs.getDnsPreset(),
+                    customPrimary = prefs.getCustomDnsPrimary(),
+                    customSecondary = prefs.getCustomDnsSecondary()
+                )
+                val primaryDns = intent.getStringExtra(EXTRA_PRIMARY_DNS)?.ifBlank { null } ?: defaultPrimary
+                val secondaryDns = intent.getStringExtra(EXTRA_SECONDARY_DNS)?.ifBlank { null } ?: defaultSecondary
                 val splitMode = SplitTunnelMode.fromId(intent.getStringExtra(EXTRA_SPLIT_MODE))
                 val splitPackages = intent.getStringArrayListExtra(EXTRA_SPLIT_PACKAGES)
                     ?.toSet()
                     ?: emptySet()
                 val server = extractServer(intent) ?: prefs.getLastActiveServer()
                 val latencyMs = intent.getIntExtra(EXTRA_LATENCY_MS, -1).takeIf { it > 0 }
-                startConnectAsync(
+                val lanBypass = intent.getBooleanExtra(EXTRA_LAN_BYPASS, prefs.isLanBypassEnabled())
+                val autoFailover = intent.getBooleanExtra(EXTRA_AUTO_FAILOVER, prefs.isAutoFailoverEnabled())
+                val mtu = intent.getIntExtra(EXTRA_MTU, prefs.getCustomMtu())
+                    .coerceIn(ConfigBackupCodec.MIN_MTU, ConfigBackupCodec.MAX_MTU)
+
+                val cfg = ActiveTunnelConfig(
                     mode = mode,
+                    primaryDns = primaryDns,
+                    secondaryDns = secondaryDns,
                     splitMode = splitMode,
                     splitPackages = splitPackages,
                     server = server,
-                    latencyMs = latencyMs,
-                    waitForNetwork = false
+                    lanBypassEnabled = lanBypass,
+                    autoFailoverEnabled = autoFailover,
+                    mtu = mtu,
+                    latencyMs = latencyMs
                 )
+                startConnectAsync(cfg, waitForNetwork = false)
                 return START_STICKY
             }
         }
@@ -106,36 +158,42 @@ class SwiftTunnelVpnService : VpnService() {
     }
 
     private fun startConnectAsync(
-        mode: ConnectionMode,
-        splitMode: SplitTunnelMode,
-        splitPackages: Set<String>,
-        server: NordServer?,
-        latencyMs: Int?,
+        config: ActiveTunnelConfig,
         waitForNetwork: Boolean
     ) {
         teardownActiveInterface()
+        currentConfig = config
         prefs.setTunnelWantedActive(true)
-        if (server != null) {
-            prefs.saveLastActiveServer(server)
+        if (config.server != null) {
+            prefs.saveLastActiveServer(config.server)
         }
 
         VpnStateHolder.update {
             it.copy(
                 status = TunnelStatus.CONNECTING,
-                mode = mode,
-                primaryDns = mode.primaryDns,
-                secondaryDns = mode.secondaryDns,
-                activeServer = if (mode.usesVpn) server else null,
-                splitMode = splitMode,
-                splitAppCount = splitPackages.size,
-                latencyMs = latencyMs,
+                mode = config.mode,
+                primaryDns = config.primaryDns,
+                secondaryDns = config.secondaryDns,
+                activeServer = if (config.mode.usesVpn) config.server else null,
+                splitMode = config.splitMode,
+                splitAppCount = config.splitPackages.size,
+                latencyMs = config.latencyMs,
                 isWireGuardVerified = false,
+                lanBypassEnabled = config.lanBypassEnabled,
+                mtu = config.mtu,
                 errorMessage = null
             )
         }
 
         ensureNotificationChannel()
-        val initialNotification = buildNotification(mode, server, splitMode, splitPackages.size, connecting = true)
+        val initialNotification = buildNotification(
+            mode = config.mode,
+            primaryDns = config.primaryDns,
+            server = config.server,
+            splitMode = config.splitMode,
+            splitCount = config.splitPackages.size,
+            connecting = true
+        )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(
                 NOTIFICATION_ID,
@@ -145,6 +203,7 @@ class SwiftTunnelVpnService : VpnService() {
         } else {
             startForeground(NOTIFICATION_ID, initialNotification)
         }
+        notifyQuickSettingsTile()
 
         connectJob = serviceScope.launch {
             val maxAttempts = if (waitForNetwork) 5 else 1
@@ -156,15 +215,17 @@ class SwiftTunnelVpnService : VpnService() {
 
             for (attempt in 1..maxAttempts) {
                 try {
-                    if (splitMode == SplitTunnelMode.INCLUDE_ONLY_APPS && splitPackages.isEmpty()) {
+                    if (config.splitMode == SplitTunnelMode.INCLUDE_ONLY_APPS && config.splitPackages.isEmpty()) {
                         throw IllegalStateException("Select at least 1 app in Split Apps (Include Only) before connecting.")
                     }
 
-                    if (mode.usesVpn) {
-                        establishWireGuardTunnel(mode, splitMode, splitPackages, server)
+                    if (config.mode.usesVpn) {
+                        establishWireGuardTunnel(config)
                     } else {
-                        establishDnsOnlyTunnel(mode, splitMode, splitPackages, latencyMs)
+                        establishDnsOnlyTunnel(config)
                     }
+                    registerNetworkHandoverMonitor()
+                    notifyQuickSettingsTile()
                     return@launch
                 } catch (e: Exception) {
                     lastError = e
@@ -183,8 +244,60 @@ class SwiftTunnelVpnService : VpnService() {
                     errorMessage = lastError?.message ?: "Failed to establish tunnel"
                 )
             }
+            notifyQuickSettingsTile()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
+        }
+    }
+
+    private fun registerNetworkHandoverMonitor() {
+        unregisterNetworkHandoverMonitor()
+        val cm = getSystemService(ConnectivityManager::class.java) ?: return
+        activeUnderlyingNetHandle = cm.activeNetwork?.networkHandle ?: -1L
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_NOT_VPN)
+            .build()
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                val handle = network.networkHandle
+                if (activeUnderlyingNetHandle == -1L) {
+                    activeUnderlyingNetHandle = handle
+                    return
+                }
+                if (handle != activeUnderlyingNetHandle && prefs.isTunnelWantedActive()) {
+                    activeUnderlyingNetHandle = handle
+                    val cfg = currentConfig ?: return
+                    if (!cfg.autoFailoverEnabled) return
+                    handoverReconnectJob?.cancel()
+                    handoverReconnectJob = serviceScope.launch {
+                        delay(1_500L)
+                        if (prefs.isTunnelWantedActive()) {
+                            startConnectAsync(cfg, waitForNetwork = true)
+                        }
+                    }
+                }
+            }
+        }
+        handoverCallback = callback
+        runCatching { cm.registerNetworkCallback(request, callback) }
+    }
+
+    private fun unregisterNetworkHandoverMonitor() {
+        handoverReconnectJob?.cancel()
+        handoverReconnectJob = null
+        val cb = handoverCallback ?: return
+        handoverCallback = null
+        val cm = getSystemService(ConnectivityManager::class.java)
+        runCatching { cm?.unregisterNetworkCallback(cb) }
+    }
+
+    private fun notifyQuickSettingsTile() {
+        runCatching {
+            TileService.requestListeningState(
+                this,
+                ComponentName(this, SwiftTunnelTileService::class.java)
+            )
         }
     }
 
@@ -212,14 +325,9 @@ class SwiftTunnelVpnService : VpnService() {
         }
     }
 
-    private suspend fun establishWireGuardTunnel(
-        mode: ConnectionMode,
-        splitMode: SplitTunnelMode,
-        splitPackages: Set<String>,
-        requestedServer: NordServer?
-    ) {
+    private suspend fun establishWireGuardTunnel(config: ActiveTunnelConfig) {
         // 1. Ensure we have a valid Nord server with WireGuard public key
-        var server = requestedServer
+        var server = config.server
         if (server == null || server.wireGuardPublicKey.isBlank()) {
             val countryId = prefs.getSelectedCountryId()
             val cityName = prefs.getSelectedCityName()
@@ -241,93 +349,153 @@ class SwiftTunnelVpnService : VpnService() {
             VpnKeyBridge.nordLynxPrivateKey = privateKey
         }
 
-        // 3. Perform REAL WireGuard Noise_IKpsk2 handshake with Nord server BEFORE adding 0.0.0.0/0 route
-        val engine = WireGuardTunnelEngine(
-            vpnService = this@SwiftTunnelVpnService,
-            endpointHost = server.stationIp,
-            endpointPort = 51820,
-            localPrivateKeyBase64 = privateKey,
-            peerPublicKeyBase64 = server.wireGuardPublicKey,
-            scope = serviceScope,
-            onStatsFlushed = { pkts, tx, rx ->
-                VpnStateHolder.recordWireGuardStats(pkts, tx, rx)
-            }
-        )
-        wireGuardEngine = engine
+        // 3. Perform REAL WireGuard Noise_IKpsk2 handshake BEFORE adding tunnel routes;
+        //    if Auto-Failover is ON and the primary server fails to respond, seamlessly
+        //    fail over to the next lowest-load server in the same city/country!
+        var activeEngine = createWireGuardEngine(server, privateKey)
+        wireGuardEngine = activeEngine
+        val handshakeResult = activeEngine.performInitialHandshake()
+        val handshakeRttMs = if (handshakeResult.isSuccess) {
+            handshakeResult.getOrThrow()
+        } else if (config.autoFailoverEnabled) {
+            activeEngine.stop()
+            val failedHost = server.hostname
+            val countryId = prefs.getSelectedCountryId()
+            val cityName = server.cityName.ifBlank { prefs.getSelectedCityName().orEmpty() }.ifBlank { null }
+            val candidates = apiClient.fetchServersForLocation(countryId, cityName, limit = 12).getOrDefault(emptyList())
+            val failoverServer = candidates.firstOrNull {
+                !it.hostname.equals(failedHost, ignoreCase = true) && it.wireGuardPublicKey.isNotBlank()
+            } ?: throw handshakeResult.exceptionOrNull()!!
 
-        val handshakeRttMs = engine.performInitialHandshake().getOrThrow()
+            server = failoverServer
+            prefs.saveLastActiveServer(failoverServer)
+            currentConfig = config.copy(server = failoverServer)
+            activeEngine = createWireGuardEngine(failoverServer, privateKey)
+            wireGuardEngine = activeEngine
+            activeEngine.performInitialHandshake().getOrThrow()
+        } else {
+            throw handshakeResult.exceptionOrNull()!!
+        }
 
-        // 4. Handshake succeeded! Establish full IPv4 (0.0.0.0/0) + IPv6 leak-blocked (::/0) TUN
-        //    with exact Split Tunneling enforcement (Include Only / Exclude / All Apps).
+        // 4. Handshake succeeded! Build TUN with Custom MTU, LAN Bypass (optional),
+        //    IPv6 leak trap (::/0), effective DNS (1.1.1.1 / 8.8.8.8 / AdGuard / Quad9 / Custom),
+        //    and exact Split Tunneling enforcement.
         val builder = Builder()
-            .setSession(buildSessionLabel(mode, server))
-            .setMtu(1280)
+            .setSession(buildSessionLabel(config.mode, config.primaryDns, server))
+            .setMtu(config.mtu)
             .addAddress("10.5.0.2", 32)
-            .addRoute("0.0.0.0", 0)
             // Capture IPv6 into TUN so apps like Brave cannot leak real location over ISP IPv6
             .addAddress("fd00:5:0::2", 128)
             .addRoute("::", 0)
-            .addDnsServer(mode.primaryDns)
-            .addDnsServer(mode.secondaryDns)
+            .addDnsServer(config.primaryDns)
+
+        if (config.secondaryDns.isNotBlank() && config.secondaryDns != config.primaryDns) {
+            builder.addDnsServer(config.secondaryDns)
+        }
+
+        applyIpv4RoutesWithLanBypass(builder, config.lanBypassEnabled)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             builder.setMetered(false)
         }
 
-        applySplitTunneling(builder, splitMode, splitPackages)
+        applySplitTunneling(builder, config.splitMode, config.splitPackages)
 
         val established = builder.establish()
             ?: throw IllegalStateException("Android VPN interface could not be established")
         tunInterface = established
 
         // 5. Start real bidirectional WireGuard TX/RX/Keepalive loops
-        engine.startDataLoops(established)
+        activeEngine.startDataLoops(established)
 
-        // Update notification with verified live server
         val nm = getSystemService(NotificationManager::class.java)
-        nm.notify(NOTIFICATION_ID, buildNotification(mode, server, splitMode, splitPackages.size, connecting = false))
+        nm.notify(
+            NOTIFICATION_ID,
+            buildNotification(
+                mode = config.mode,
+                primaryDns = config.primaryDns,
+                server = server,
+                splitMode = config.splitMode,
+                splitCount = config.splitPackages.size,
+                connecting = false
+            )
+        )
 
         VpnStateHolder.update {
             it.copy(
                 status = TunnelStatus.CONNECTED,
-                mode = mode,
+                mode = config.mode,
                 connectedAtMillis = System.currentTimeMillis(),
                 dnsQueriesForwarded = 0L,
                 dnsCacheHits = 0L,
                 bytesTx = 0L,
                 bytesRx = 0L,
-                primaryDns = mode.primaryDns,
-                secondaryDns = mode.secondaryDns,
+                primaryDns = config.primaryDns,
+                secondaryDns = config.secondaryDns,
                 activeServer = server,
-                splitMode = splitMode,
-                splitAppCount = splitPackages.size,
+                splitMode = config.splitMode,
+                splitAppCount = config.splitPackages.size,
                 latencyMs = handshakeRttMs,
                 isWireGuardVerified = true,
+                lanBypassEnabled = config.lanBypassEnabled,
+                mtu = config.mtu,
                 errorMessage = null
             )
         }
     }
 
-    private fun establishDnsOnlyTunnel(
-        mode: ConnectionMode,
-        splitMode: SplitTunnelMode,
-        splitPackages: Set<String>,
-        latencyMs: Int?
-    ) {
+    private fun createWireGuardEngine(
+        server: NordServer,
+        privateKey: String
+    ): WireGuardTunnelEngine = WireGuardTunnelEngine(
+        vpnService = this@SwiftTunnelVpnService,
+        endpointHost = server.stationIp,
+        endpointPort = 51820,
+        localPrivateKeyBase64 = privateKey,
+        peerPublicKeyBase64 = server.wireGuardPublicKey,
+        scope = serviceScope,
+        onStatsFlushed = { pkts, tx, rx ->
+            VpnStateHolder.recordWireGuardStats(pkts, tx, rx)
+        }
+    )
+
+    private fun applyIpv4RoutesWithLanBypass(builder: Builder, lanBypassEnabled: Boolean) {
+        if (!lanBypassEnabled) {
+            builder.addRoute("0.0.0.0", 0)
+            return
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            builder.addRoute("0.0.0.0", 0)
+            LanBypassRouteCalculator.excludedLanSubnets.forEach { cidr ->
+                runCatching {
+                    builder.excludeRoute(IpPrefix(InetAddress.getByName(cidr.address), cidr.prefixLength))
+                }
+            }
+        } else {
+            LanBypassRouteCalculator.publicInternetRoutes.forEach { cidr ->
+                builder.addRoute(cidr.address, cidr.prefixLength)
+            }
+        }
+    }
+
+    private fun establishDnsOnlyTunnel(config: ActiveTunnelConfig) {
         val builder = Builder()
-            .setSession(buildSessionLabel(mode, null))
-            .setMtu(1420)
+            .setSession(buildSessionLabel(config.mode, config.primaryDns, null))
+            .setMtu(config.mtu.coerceAtLeast(1280))
             .addAddress("10.215.173.1", 32)
-            .addDnsServer(mode.primaryDns)
-            .addDnsServer(mode.secondaryDns)
-            .addRoute(mode.primaryDns, 32)
-            .addRoute(mode.secondaryDns, 32)
+            .addDnsServer(config.primaryDns)
+            .addRoute(config.primaryDns, 32)
+
+        if (config.secondaryDns.isNotBlank() && config.secondaryDns != config.primaryDns) {
+            builder.addDnsServer(config.secondaryDns)
+            builder.addRoute(config.secondaryDns, 32)
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             builder.setMetered(false)
         }
 
-        applySplitTunneling(builder, splitMode, splitPackages)
+        applySplitTunneling(builder, config.splitMode, config.splitPackages)
 
         val established = builder.establish()
             ?: throw IllegalStateException("Android VPN interface could not be established")
@@ -336,8 +504,8 @@ class SwiftTunnelVpnService : VpnService() {
         val activeForwarder = DnsPacketForwarder(
             vpnService = this,
             tunFd = established,
-            primaryDnsIp = mode.primaryDns,
-            secondaryDnsIp = mode.secondaryDns,
+            primaryDnsIp = config.primaryDns,
+            secondaryDnsIp = config.secondaryDns,
             scope = serviceScope,
             onStatsFlushed = { fwd, hits, tx, rx ->
                 VpnStateHolder.recordDnsStats(fwd, hits, tx, rx)
@@ -346,24 +514,36 @@ class SwiftTunnelVpnService : VpnService() {
         dnsForwarder = activeForwarder
 
         val nm = getSystemService(NotificationManager::class.java)
-        nm.notify(NOTIFICATION_ID, buildNotification(mode, null, splitMode, splitPackages.size, connecting = false))
+        nm.notify(
+            NOTIFICATION_ID,
+            buildNotification(
+                mode = config.mode,
+                primaryDns = config.primaryDns,
+                server = null,
+                splitMode = config.splitMode,
+                splitCount = config.splitPackages.size,
+                connecting = false
+            )
+        )
 
         VpnStateHolder.update {
             it.copy(
                 status = TunnelStatus.CONNECTED,
-                mode = mode,
+                mode = config.mode,
                 connectedAtMillis = System.currentTimeMillis(),
                 dnsQueriesForwarded = 0L,
                 dnsCacheHits = 0L,
                 bytesTx = 0L,
                 bytesRx = 0L,
-                primaryDns = mode.primaryDns,
-                secondaryDns = mode.secondaryDns,
+                primaryDns = config.primaryDns,
+                secondaryDns = config.secondaryDns,
                 activeServer = null,
-                splitMode = splitMode,
-                splitAppCount = splitPackages.size,
-                latencyMs = latencyMs,
+                splitMode = config.splitMode,
+                splitAppCount = config.splitPackages.size,
+                latencyMs = config.latencyMs,
                 isWireGuardVerified = false,
+                lanBypassEnabled = config.lanBypassEnabled,
+                mtu = config.mtu,
                 errorMessage = null
             )
         }
@@ -407,6 +587,7 @@ class SwiftTunnelVpnService : VpnService() {
 
     private fun disconnectTunnel() {
         prefs.setTunnelWantedActive(false)
+        currentConfig = null
         VpnStateHolder.update { it.copy(status = TunnelStatus.DISCONNECTING) }
         teardownActiveInterface()
         VpnStateHolder.update {
@@ -417,6 +598,7 @@ class SwiftTunnelVpnService : VpnService() {
                 errorMessage = null
             )
         }
+        notifyQuickSettingsTile()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -426,6 +608,7 @@ class SwiftTunnelVpnService : VpnService() {
             connectJob?.cancel()
             connectJob = null
         }
+        unregisterNetworkHandoverMonitor()
         wireGuardEngine?.stop()
         wireGuardEngine = null
         dnsForwarder?.stop()
@@ -445,11 +628,11 @@ class SwiftTunnelVpnService : VpnService() {
         super.onDestroy()
     }
 
-    private fun buildSessionLabel(mode: ConnectionMode, server: NordServer?): String {
+    private fun buildSessionLabel(mode: ConnectionMode, primaryDns: String, server: NordServer?): String {
         return if (mode.usesVpn && server != null) {
-            "SwiftTunnel WG • ${server.countryName} (${mode.primaryDns})"
+            "SwiftTunnel WG • ${server.serverCodeTag} ${server.locationLabel} ($primaryDns)"
         } else {
-            "SwiftTunnel DNS • ${mode.shortTitle}"
+            "SwiftTunnel DNS • $primaryDns"
         }
     }
 
@@ -471,6 +654,7 @@ class SwiftTunnelVpnService : VpnService() {
 
     private fun buildNotification(
         mode: ConnectionMode,
+        primaryDns: String,
         server: NordServer?,
         splitMode: SplitTunnelMode,
         splitCount: Int,
@@ -503,11 +687,11 @@ class SwiftTunnelVpnService : VpnService() {
         }
 
         val contentText = when {
-            connecting -> "Handshaking with ${server?.countryName ?: mode.shortTitle}…"
+            connecting -> "Handshaking with ${server?.let { "${it.serverCodeTag} ${it.locationLabel}" } ?: mode.shortTitle}…"
             mode.usesVpn && server != null ->
-                "WireGuard • ${server.countryName} (${server.stationIp}) • DNS ${mode.primaryDns} • $splitTag"
+                "WG ${server.serverCodeTag} • ${server.locationLabel} (${server.stationIp}) • DNS $primaryDns • $splitTag"
             else ->
-                "${mode.title} • DNS ${mode.primaryDns} • $splitTag"
+                "${mode.title} • DNS $primaryDns • $splitTag"
         }
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
@@ -547,6 +731,11 @@ class SwiftTunnelVpnService : VpnService() {
         const val ACTION_BOOT_AUTOCONNECT = "com.example.vpn.ACTION_BOOT_AUTOCONNECT"
 
         private const val EXTRA_MODE = "extra_mode"
+        private const val EXTRA_PRIMARY_DNS = "extra_primary_dns"
+        private const val EXTRA_SECONDARY_DNS = "extra_secondary_dns"
+        private const val EXTRA_LAN_BYPASS = "extra_lan_bypass"
+        private const val EXTRA_AUTO_FAILOVER = "extra_auto_failover"
+        private const val EXTRA_MTU = "extra_mtu"
         private const val EXTRA_SPLIT_MODE = "extra_split_mode"
         private const val EXTRA_SPLIT_PACKAGES = "extra_split_packages"
         private const val EXTRA_LATENCY_MS = "extra_latency_ms"
@@ -566,13 +755,23 @@ class SwiftTunnelVpnService : VpnService() {
         fun createConnectIntent(
             context: Context,
             mode: ConnectionMode,
+            primaryDns: String,
+            secondaryDns: String,
             splitMode: SplitTunnelMode,
             splitPackages: Set<String>,
             server: NordServer?,
-            latencyMs: Int?
+            latencyMs: Int?,
+            lanBypassEnabled: Boolean,
+            autoFailoverEnabled: Boolean,
+            mtu: Int
         ): Intent = Intent(context, SwiftTunnelVpnService::class.java).apply {
             action = ACTION_CONNECT
             putExtra(EXTRA_MODE, mode.id)
+            putExtra(EXTRA_PRIMARY_DNS, primaryDns)
+            putExtra(EXTRA_SECONDARY_DNS, secondaryDns)
+            putExtra(EXTRA_LAN_BYPASS, lanBypassEnabled)
+            putExtra(EXTRA_AUTO_FAILOVER, autoFailoverEnabled)
+            putExtra(EXTRA_MTU, mtu)
             putExtra(EXTRA_SPLIT_MODE, splitMode.id)
             putStringArrayListExtra(EXTRA_SPLIT_PACKAGES, ArrayList(splitPackages))
             if (latencyMs != null) putExtra(EXTRA_LATENCY_MS, latencyMs)

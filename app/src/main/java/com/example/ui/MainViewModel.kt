@@ -7,6 +7,7 @@ import android.os.PowerManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.ApiKeySource
+import com.example.data.ConfigBackupCodec
 import com.example.data.InstalledAppsRepository
 import com.example.data.NordApiClient
 import com.example.data.NordCountryCatalog
@@ -14,18 +15,24 @@ import com.example.data.PreferencesRepository
 import com.example.data.SecureKeyStorage
 import com.example.data.ServerCodeMatcher
 import com.example.model.ConnectionMode
+import com.example.model.DnsPreset
 import com.example.model.InstalledAppInfo
+import com.example.model.LeakCheckResult
 import com.example.model.NetworkTraceInfo
 import com.example.model.NordCountry
 import com.example.model.NordCredentialsState
 import com.example.model.NordServer
 import com.example.model.RegionFilter
+import com.example.model.SavedVpnProfile
 import com.example.model.SplitTunnelMode
 import com.example.model.TunnelStatus
 import com.example.model.VpnSessionState
+import com.example.model.isValidIpv4Address
+import com.example.model.resolveEffectiveDns
 import com.example.vpn.SwiftTunnelVpnService
 import com.example.vpn.VpnKeyBridge
 import com.example.vpn.VpnStateHolder
+import java.util.UUID
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,6 +53,20 @@ data class MainUiState(
     val selectedMode: ConnectionMode = ConnectionMode.CLOUDFLARE_PLUS_VPN,
     val vpnSession: VpnSessionState = VpnSessionState(),
     val elapsedSeconds: Long = 0L,
+    val liveTxBytesPerSec: Long = 0L,
+    val liveRxBytesPerSec: Long = 0L,
+    val rxRateHistory: List<Long> = emptyList(),
+    val txRateHistory: List<Long> = emptyList(),
+    val dnsPreset: DnsPreset = DnsPreset.MODE_DEFAULT,
+    val customDnsPrimary: String = "",
+    val customDnsSecondary: String = "",
+    val lanBypassEnabled: Boolean = false,
+    val autoFailoverEnabled: Boolean = true,
+    val customMtu: Int = 1280,
+    val savedProfiles: List<SavedVpnProfile> = emptyList(),
+    val isRunningLeakCheck: Boolean = false,
+    val leakCheckResult: LeakCheckResult? = null,
+    val isHoppingServer: Boolean = false,
     val countries: List<NordCountry> = emptyList(),
     val isLiveDirectorySynced: Boolean = false,
     val isLoadingCountries: Boolean = false,
@@ -91,6 +112,9 @@ data class MainUiState(
             SplitTunnelMode.INCLUDE_ONLY_APPS -> includedPackages
         }
 
+    val effectiveDns: Pair<String, String>
+        get() = resolveEffectiveDns(selectedMode, dnsPreset, customDnsPrimary, customDnsSecondary)
+
     val isConnected: Boolean
         get() = vpnSession.status == TunnelStatus.CONNECTED
 
@@ -114,6 +138,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val keyInfo = keyStorage.getActiveKeyInfo()
             MainUiState(
                 selectedMode = prefs.getConnectionMode(),
+                dnsPreset = prefs.getDnsPreset(),
+                customDnsPrimary = prefs.getCustomDnsPrimary(),
+                customDnsSecondary = prefs.getCustomDnsSecondary(),
+                lanBypassEnabled = prefs.isLanBypassEnabled(),
+                autoFailoverEnabled = prefs.isAutoFailoverEnabled(),
+                customMtu = prefs.getCustomMtu(),
+                savedProfiles = prefs.getSavedProfiles(),
                 countries = NordCountryCatalog.fallbackCountries,
                 favoriteCountryIds = prefs.getFavoriteCountryIds(),
                 selectedCountryId = prefs.getSelectedCountryId(),
@@ -144,9 +175,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             VpnStateHolder.sessionState.collect { session ->
                 _uiState.update { state ->
+                    val (desiredPrimaryDns, _) = state.effectiveDns
                     val stillPending = state.hasPendingReconfigure &&
                         session.status == TunnelStatus.CONNECTED &&
                         (session.mode != state.selectedMode ||
+                            session.primaryDns != desiredPrimaryDns ||
+                            session.lanBypassEnabled != state.lanBypassEnabled ||
+                            session.mtu != state.customMtu ||
                             session.splitMode != state.splitMode ||
                             session.splitAppCount != state.activeSplitPackages.size ||
                             (state.selectedMode.usesVpn &&
@@ -169,9 +204,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun startElapsedTimer(connectedAt: Long) {
         if (timerJob?.isActive == true) return
         timerJob = viewModelScope.launch {
+            var lastTx = VpnStateHolder.sessionState.value.bytesTx
+            var lastRx = VpnStateHolder.sessionState.value.bytesRx
             while (isActive) {
                 val secs = ((System.currentTimeMillis() - connectedAt) / 1000L).coerceAtLeast(0L)
-                _uiState.update { it.copy(elapsedSeconds = secs) }
+                val currentSession = VpnStateHolder.sessionState.value
+                val txRate = (currentSession.bytesTx - lastTx).coerceAtLeast(0L)
+                val rxRate = (currentSession.bytesRx - lastRx).coerceAtLeast(0L)
+                lastTx = currentSession.bytesTx
+                lastRx = currentSession.bytesRx
+                _uiState.update { state ->
+                    val nextRx = (state.rxRateHistory + rxRate).takeLast(SPARKLINE_MAX_SAMPLES)
+                    val nextTx = (state.txRateHistory + txRate).takeLast(SPARKLINE_MAX_SAMPLES)
+                    state.copy(
+                        elapsedSeconds = secs,
+                        liveTxBytesPerSec = txRate,
+                        liveRxBytesPerSec = rxRate,
+                        rxRateHistory = nextRx,
+                        txRateHistory = nextTx
+                    )
+                }
                 delay(1_000L)
             }
         }
@@ -180,7 +232,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun stopElapsedTimer() {
         timerJob?.cancel()
         timerJob = null
-        _uiState.update { it.copy(elapsedSeconds = 0L) }
+        _uiState.update {
+            it.copy(
+                elapsedSeconds = 0L,
+                liveTxBytesPerSec = 0L,
+                liveRxBytesPerSec = 0L,
+                rxRateHistory = emptyList(),
+                txRateHistory = emptyList()
+            )
+        }
     }
 
     private fun loadInitialData() {
@@ -611,13 +671,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun probeActiveLatency() {
         viewModelScope.launch {
             val state = _uiState.value
+            val primaryDns = state.effectiveDns.first
             val targetHost = if (state.selectedMode.usesVpn && state.recommendedServer != null) {
                 state.recommendedServer.stationIp
             } else {
-                state.selectedMode.primaryDns
+                primaryDns
             }
             val ms = apiClient.measureLatencyMs(targetHost, 443)
-                ?: apiClient.measureLatencyMs(state.selectedMode.primaryDns, 443)
+                ?: apiClient.measureLatencyMs(primaryDns, 443)
             _uiState.update { it.copy(measuredLatencyMs = ms) }
         }
     }
@@ -707,6 +768,347 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.update { it.copy(showSelectedAppsOnly = !it.showSelectedAppsOnly) }
     }
 
+    fun selectDnsPreset(preset: DnsPreset) {
+        prefs.setDnsPreset(preset)
+        _uiState.update { state ->
+            val nextDns = resolveEffectiveDns(
+                state.selectedMode,
+                preset,
+                state.customDnsPrimary,
+                state.customDnsSecondary
+            )
+            val dirty = state.isConnected && state.vpnSession.primaryDns != nextDns.first
+            state.copy(
+                dnsPreset = preset,
+                hasPendingReconfigure = dirty || state.hasPendingReconfigure
+            )
+        }
+        probeActiveLatency()
+    }
+
+    fun saveCustomDns(primary: String, secondary: String): Boolean {
+        val cleanPrimary = primary.trim()
+        val cleanSecondary = secondary.trim().ifEmpty { cleanPrimary }
+        if (!isValidIpv4Address(cleanPrimary)) {
+            showMessage("Enter a valid primary IPv4 address (e.g. 94.140.14.14)")
+            return false
+        }
+        if (!isValidIpv4Address(cleanSecondary)) {
+            showMessage("Enter a valid secondary IPv4 address (e.g. 94.140.15.15)")
+            return false
+        }
+        prefs.setCustomDns(cleanPrimary, cleanSecondary)
+        prefs.setDnsPreset(DnsPreset.CUSTOM)
+        _uiState.update { state ->
+            val dirty = state.isConnected && state.vpnSession.primaryDns != cleanPrimary
+            state.copy(
+                dnsPreset = DnsPreset.CUSTOM,
+                customDnsPrimary = cleanPrimary,
+                customDnsSecondary = cleanSecondary,
+                hasPendingReconfigure = dirty || state.hasPendingReconfigure
+            )
+        }
+        showMessage("Custom DNS saved ($cleanPrimary / $cleanSecondary)")
+        probeActiveLatency()
+        return true
+    }
+
+    fun setLanBypassEnabled(enabled: Boolean) {
+        prefs.setLanBypassEnabled(enabled)
+        _uiState.update { state ->
+            val dirty = state.isConnected && state.vpnSession.lanBypassEnabled != enabled
+            state.copy(
+                lanBypassEnabled = enabled,
+                hasPendingReconfigure = dirty || state.hasPendingReconfigure
+            )
+        }
+        showMessage(
+            if (enabled) "LAN Bypass enabled — local devices (Chromecast, NAS, Plex) stay reachable"
+            else "Strict tunnel routing enabled (all private subnets inside tunnel)"
+        )
+    }
+
+    fun setAutoFailoverEnabled(enabled: Boolean) {
+        prefs.setAutoFailoverEnabled(enabled)
+        _uiState.update { it.copy(autoFailoverEnabled = enabled) }
+        showMessage(
+            if (enabled) "Auto-Failover & Wi-Fi/5G Handover enabled"
+            else "Auto-Failover disabled"
+        )
+    }
+
+    fun setCustomMtu(mtu: Int) {
+        val clamped = mtu.coerceIn(ConfigBackupCodec.MIN_MTU, ConfigBackupCodec.MAX_MTU)
+        prefs.setCustomMtu(clamped)
+        _uiState.update { state ->
+            val dirty = state.isConnected && state.vpnSession.mtu != clamped
+            state.copy(
+                customMtu = clamped,
+                hasPendingReconfigure = dirty || state.hasPendingReconfigure
+            )
+        }
+        showMessage("WireGuard MTU set to $clamped bytes")
+    }
+
+    fun saveCurrentAsProfile(rawName: String) {
+        val cleanName = rawName.trim()
+        if (cleanName.isEmpty()) {
+            showMessage("Enter a name for this profile")
+            return
+        }
+        val state = _uiState.value
+        val newProfile = SavedVpnProfile(
+            id = UUID.randomUUID().toString().take(8),
+            name = cleanName.take(32),
+            modeId = state.selectedMode.id,
+            dnsPresetId = state.dnsPreset.id,
+            customDnsPrimary = state.customDnsPrimary,
+            customDnsSecondary = state.customDnsSecondary,
+            countryId = state.selectedCountryId,
+            cityName = state.selectedCityName,
+            pinnedServerHostname = state.recommendedServer?.hostname,
+            pinnedServerCode = state.recommendedServer?.serverCodeTag,
+            splitModeId = state.splitMode.id,
+            splitPackages = state.activeSplitPackages,
+            lanBypassEnabled = state.lanBypassEnabled,
+            mtu = state.customMtu
+        )
+        val updated = (listOf(newProfile) + state.savedProfiles).take(MAX_SAVED_PROFILES)
+        prefs.saveProfiles(updated)
+        _uiState.update { it.copy(savedProfiles = updated) }
+        showMessage("Saved profile \"${newProfile.name}\"")
+    }
+
+    fun deleteSavedProfile(profileId: String) {
+        val updated = _uiState.value.savedProfiles.filterNot { it.id == profileId }
+        prefs.saveProfiles(updated)
+        _uiState.update { it.copy(savedProfiles = updated) }
+        showMessage("Profile removed")
+    }
+
+    fun applySavedProfile(
+        profile: SavedVpnProfile,
+        onReadyToConnect: () -> Unit
+    ) {
+        val mode = ConnectionMode.fromId(profile.modeId)
+        val preset = DnsPreset.fromId(profile.dnsPresetId)
+        val splitMode = SplitTunnelMode.fromId(profile.splitModeId)
+        val clampedMtu = profile.mtu.coerceIn(ConfigBackupCodec.MIN_MTU, ConfigBackupCodec.MAX_MTU)
+
+        prefs.setConnectionMode(mode)
+        prefs.setDnsPreset(preset)
+        prefs.setCustomDns(profile.customDnsPrimary, profile.customDnsSecondary)
+        prefs.setSelectedLocation(profile.countryId, profile.cityName)
+        prefs.setPinnedServerHostname(profile.pinnedServerHostname)
+        prefs.setSplitTunnelMode(splitMode)
+        when (splitMode) {
+            SplitTunnelMode.EXCLUDE_APPS -> prefs.setExcludedPackages(profile.splitPackages)
+            SplitTunnelMode.INCLUDE_ONLY_APPS -> prefs.setIncludedPackages(profile.splitPackages)
+            SplitTunnelMode.ALL_APPS -> Unit
+        }
+        prefs.setLanBypassEnabled(profile.lanBypassEnabled)
+        prefs.setCustomMtu(clampedMtu)
+
+        _uiState.update { state ->
+            state.copy(
+                selectedMode = mode,
+                dnsPreset = preset,
+                customDnsPrimary = profile.customDnsPrimary,
+                customDnsSecondary = profile.customDnsSecondary,
+                selectedCountryId = profile.countryId,
+                selectedCityName = profile.cityName,
+                splitMode = splitMode,
+                excludedPackages = if (splitMode == SplitTunnelMode.EXCLUDE_APPS) profile.splitPackages else state.excludedPackages,
+                includedPackages = if (splitMode == SplitTunnelMode.INCLUDE_ONLY_APPS) profile.splitPackages else state.includedPackages,
+                lanBypassEnabled = profile.lanBypassEnabled,
+                customMtu = clampedMtu,
+                isLoadingServer = mode.usesVpn,
+                serverError = null
+            )
+        }
+
+        if (!mode.usesVpn) {
+            showMessage("Applied profile \"${profile.name}\" — connecting…")
+            onReadyToConnect()
+            return
+        }
+
+        viewModelScope.launch {
+            val resolvedServer = profile.pinnedServerHostname?.let { host ->
+                apiClient.fetchServerByHostname(host).getOrNull()
+            } ?: apiClient.fetchRecommendedServer(profile.countryId, profile.cityName).getOrNull()
+
+            if (resolvedServer != null) {
+                prefs.saveLastActiveServer(resolvedServer)
+                _uiState.update {
+                    it.copy(
+                        recommendedServer = resolvedServer,
+                        isLoadingServer = false,
+                        serverError = null
+                    )
+                }
+                probeActiveLatency()
+                showMessage("Applied \"${profile.name}\" (${resolvedServer.serverCodeTag})")
+                onReadyToConnect()
+            } else {
+                _uiState.update { it.copy(isLoadingServer = false) }
+                showMessage("Applied \"${profile.name}\" — could not resolve server, retrying…")
+                onReadyToConnect()
+            }
+        }
+    }
+
+    fun hopToLowerLoadServer(onReconnect: () -> Unit) {
+        val state = _uiState.value
+        if (!state.selectedMode.usesVpn) {
+            showMessage("Switch to a VPN routing mode to hop NordVPN servers")
+            return
+        }
+        if (state.isHoppingServer) return
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(isHoppingServer = true) }
+            val currentHost = (if (state.isConnected) state.vpnSession.activeServer?.hostname else null)
+                ?: state.recommendedServer?.hostname
+            val result = apiClient.fetchServersForLocation(
+                countryId = state.selectedCountryId,
+                preferredCityName = state.selectedCityName,
+                limit = 12
+            )
+            result.onSuccess { candidates ->
+                val picked = candidates
+                    .filter { !it.hostname.equals(currentHost, ignoreCase = true) }
+                    .minByOrNull { it.loadPercent }
+                    ?: candidates.minByOrNull { it.loadPercent }
+                if (picked != null) {
+                    prefs.setPinnedServerHostname(picked.hostname)
+                    prefs.saveLastActiveServer(picked)
+                    _uiState.update {
+                        it.copy(
+                            recommendedServer = picked,
+                            isHoppingServer = false,
+                            hasPendingReconfigure = it.isConnected
+                        )
+                    }
+                    probeActiveLatency()
+                    showMessage("Hopped to ${picked.serverCodeTag} (${picked.cityName}, load ${picked.loadPercent}%)")
+                    if (state.isConnected) {
+                        onReconnect()
+                    }
+                } else {
+                    _uiState.update { it.copy(isHoppingServer = false) }
+                    showMessage("No alternate lower-load server available in this location right now")
+                }
+            }.onFailure { err ->
+                _uiState.update { it.copy(isHoppingServer = false) }
+                showMessage(err.message ?: "Server hop failed — check connection")
+            }
+        }
+    }
+
+    fun runIpAndLeakCheck() {
+        if (_uiState.value.isRunningLeakCheck) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRunningLeakCheck = true) }
+            val state = _uiState.value
+            val expectedIp = if (state.selectedMode.usesVpn) {
+                (if (state.isConnected) state.vpnSession.activeServer?.stationIp else null)
+                    ?: state.recommendedServer?.stationIp
+            } else {
+                null
+            }
+            val (pDns, sDns) = if (state.isConnected) {
+                state.vpnSession.primaryDns to state.vpnSession.secondaryDns
+            } else {
+                state.effectiveDns
+            }
+            val activeDnsSummary = if (pDns == sDns) pDns else "$pDns / $sDns"
+
+            apiClient.fetchNetworkTrace()
+                .onSuccess { trace ->
+                    val exitIp = trace.ip.trim()
+                    val isIpv4Exit = isValidIpv4Address(exitIp)
+                    val ipv6Blocked = isIpv4Exit || (state.isConnected && state.vpnSession.isWireGuardVerified)
+                    val ipMatches = !expectedIp.isNullOrBlank() && exitIp.equals(expectedIp, ignoreCase = true)
+                    val result = LeakCheckResult(
+                        exitIp = exitIp.ifBlank { "Unavailable" },
+                        countryCode = trace.countryCode.ifBlank { "—" },
+                        colo = trace.colo.ifBlank { "—" },
+                        tlsVersion = trace.tls.ifBlank { "TLS" },
+                        ipv6LeakBlocked = ipv6Blocked,
+                        expectedServerIp = expectedIp,
+                        ipMatchesNordServer = ipMatches,
+                        activeDnsSummary = activeDnsSummary,
+                        checkedAtMillis = System.currentTimeMillis()
+                    )
+                    _uiState.update {
+                        it.copy(
+                            networkTrace = trace,
+                            leakCheckResult = result,
+                            isRunningLeakCheck = false
+                        )
+                    }
+                }
+                .onFailure { err ->
+                    val result = LeakCheckResult(
+                        exitIp = "Error",
+                        countryCode = "—",
+                        colo = "—",
+                        tlsVersion = "—",
+                        ipv6LeakBlocked = state.isConnected && state.vpnSession.isWireGuardVerified,
+                        expectedServerIp = expectedIp,
+                        ipMatchesNordServer = false,
+                        activeDnsSummary = activeDnsSummary,
+                        checkedAtMillis = System.currentTimeMillis(),
+                        errorMessage = err.message ?: "Could not reach IP trace endpoint"
+                    )
+                    _uiState.update {
+                        it.copy(
+                            leakCheckResult = result,
+                            isRunningLeakCheck = false
+                        )
+                    }
+                }
+        }
+    }
+
+    fun exportBackupJson(): String =
+        ConfigBackupCodec.encode(prefs.exportConfigBackup())
+
+    fun importBackupJson(rawJson: String): Boolean {
+        val decoded = ConfigBackupCodec.decode(rawJson).getOrElse { err ->
+            showMessage("Import failed: ${err.message ?: "invalid JSON"}")
+            return false
+        }
+        prefs.importConfigBackup(decoded)
+        _uiState.update { state ->
+            state.copy(
+                selectedMode = prefs.getConnectionMode(),
+                dnsPreset = prefs.getDnsPreset(),
+                customDnsPrimary = prefs.getCustomDnsPrimary(),
+                customDnsSecondary = prefs.getCustomDnsSecondary(),
+                selectedCountryId = prefs.getSelectedCountryId(),
+                selectedCityName = prefs.getSelectedCityName(),
+                favoriteCountryIds = prefs.getFavoriteCountryIds(),
+                splitMode = prefs.getSplitTunnelMode(),
+                excludedPackages = prefs.getExcludedPackages(),
+                includedPackages = prefs.getIncludedPackages(),
+                autoConnectOnBoot = prefs.isAutoConnectOnBootEnabled(),
+                lanBypassEnabled = prefs.isLanBypassEnabled(),
+                autoFailoverEnabled = prefs.isAutoFailoverEnabled(),
+                customMtu = prefs.getCustomMtu(),
+                savedProfiles = prefs.getSavedProfiles(),
+                hasPendingReconfigure = state.isConnected
+            )
+        }
+        refreshRecommendedServer(
+            countryId = prefs.getSelectedCountryId(),
+            cityName = prefs.getSelectedCityName()
+        )
+        showMessage("Imported config & ${decoded.savedProfiles.size} profile(s) (API key untouched)")
+        return true
+    }
+
     fun validateBeforeConnect(): String? {
         val state = _uiState.value
         if (state.splitMode == SplitTunnelMode.INCLUDE_ONLY_APPS && state.includedPackages.isEmpty()) {
@@ -725,14 +1127,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val state = _uiState.value
+        val (primaryDns, secondaryDns) = state.effectiveDns
         VpnKeyBridge.nordLynxPrivateKey = inMemoryNordLynxPrivateKey
         val intent = SwiftTunnelVpnService.createConnectIntent(
             context = context,
             mode = state.selectedMode,
+            primaryDns = primaryDns,
+            secondaryDns = secondaryDns,
             splitMode = state.splitMode,
             splitPackages = state.activeSplitPackages,
             server = state.recommendedServer,
-            latencyMs = state.measuredLatencyMs
+            latencyMs = state.measuredLatencyMs,
+            lanBypassEnabled = state.lanBypassEnabled,
+            autoFailoverEnabled = state.autoFailoverEnabled,
+            mtu = state.customMtu
         )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
@@ -753,12 +1161,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val state = _uiState.value
         val server = state.recommendedServer ?: return null
         val privateKey = inMemoryNordLynxPrivateKey ?: "<SET_NORD_API_KEY_IN_APP>"
+        val (primaryDns, secondaryDns) = state.effectiveDns
         return buildString {
             appendLine("# SwiftTunnel NordLynx Profile • ${server.countryName} (${server.hostname})")
             appendLine("[Interface]")
             appendLine("PrivateKey = $privateKey")
             appendLine("Address = 10.5.0.2/32")
-            appendLine("DNS = ${state.selectedMode.primaryDns}, ${state.selectedMode.secondaryDns}")
+            appendLine("MTU = ${state.customMtu}")
+            appendLine("DNS = $primaryDns, $secondaryDns")
             appendLine()
             appendLine("[Peer]")
             appendLine("PublicKey = ${server.wireGuardPublicKey.ifBlank { "<UNAVAILABLE>" }}")
@@ -774,5 +1184,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun consumeMessage() {
         _uiState.update { it.copy(snackbarMessage = null) }
+    }
+
+    companion object {
+        private const val SPARKLINE_MAX_SAMPLES = 30
+        private const val MAX_SAVED_PROFILES = 12
     }
 }
